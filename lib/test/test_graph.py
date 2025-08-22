@@ -69,6 +69,23 @@ class TestPrecedenceGraph(TestCase):
         self.assertEqual(reverse_bfs_from_1, self.g.bfs(1, reverse=True))
         self.assertEqual(bfs_from_not_existing_10, self.g.bfs(10))
 
+    def test_topological_sort(self):
+        g = PrecedenceGraph()
+        g.add_edge(0, 1)
+        g.add_edge(0, 2)
+        g.add_edge(0, 3)
+        g.add_edge(1, 4)
+        g.add_edge(2, 4)
+        g.add_edge(3, 5)
+        g.add_edge(4, 5)
+        order = g.topological_sort()
+        reversed_order = g.topological_sort(reverse=True)
+        for fr_id, to_ids in g.get_copy_of_all_edges().items():
+            for to_id in to_ids:
+                self.assertTrue(order.index(fr_id) < order.index(to_id))
+                self.assertTrue(reversed_order.index(fr_id) > reversed_order.index(to_id))
+
+
     def test_get_successors(self):
         self.assertEqual({1, 2}, self.g.get_successors(0))
         self.assertEqual({3}, self.g.get_successors(1))

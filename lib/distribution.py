@@ -25,6 +25,10 @@ class Distribution(ABC):
         pass
 
     @abstractmethod
+    def shift(self, shift: int | float) -> Distribution:
+        """all values += shift"""
+
+    @abstractmethod
     def min_v(self) -> int | float:
         """returns minimal possible value"""
         pass
@@ -47,6 +51,11 @@ class Distribution(ABC):
     @abstractmethod
     def e(self) -> float:
         """returns expectation value"""
+        pass
+
+    @abstractmethod
+    def generate(self, size: int | None = None) -> npt.NDArray:
+        """generates random value from the distribution"""
         pass
 
     def print_itself(self) -> None:
@@ -102,6 +111,10 @@ class DiscreteDistribution(Distribution):
 
     def __radd__(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
         return self.__add__(other)
+
+    def shift(self, shift: int) -> Distribution:
+        res_values = self.values + shift
+        return DiscreteDistribution(res_values, self.probs)
 
     def max_with(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
         if isinstance(other, DiscreteDistribution):
@@ -170,5 +183,42 @@ class DiscreteDistribution(Distribution):
         exists = idx < self.values.size and self.values[idx] == item
         return 0. if not exists else self.probs[idx]
 
+    def generate(self, size: int | None = None) -> int:
+        size = 0 if size is None else size
+        return np.random.choice(self.values, size, p=self.probs)
+
     def print_itself(self):
         print([(int(v), float(p)) for v, p in zip(self.values, self.probs)])
+
+
+def max_of_discr_distributions(distributions: tt.List[DiscreteDistribution]) -> DiscreteDistribution:
+    min_possible_v = np.max([d.min_v() for d in distributions])
+    res_v_set = set()
+    for d in distributions:
+        for v in d.values:
+            if v >= min_possible_v:
+                res_v_set.add(v)
+    res_values = np.array(list(res_v_set))
+    res_values.sort()
+    res_probs = np.zeros_like(res_values, dtype=float)
+
+    idx_s = np.zeros(shape=(len(distributions),), dtype=int)
+    less_probs = np.zeros(shape=(len(distributions),), dtype=float)
+    equal_probs = np.zeros(shape=(len(distributions),), dtype=float)
+    res_id = 0
+    for res_v in res_values:
+        for d_id in range(len(distributions)):
+            while idx_s[d_id] < len(distributions[d_id].values) and distributions[d_id].values[idx_s[d_id]] < res_v:
+                less_probs[d_id] += distributions[d_id].probs[idx_s[d_id]]
+                idx_s[d_id] += 1
+            if idx_s[d_id] < len(distributions[d_id].values) and distributions[d_id].values[idx_s[d_id]] == res_v:
+                equal_probs[d_id] = distributions[d_id].probs[idx_s[d_id]]
+            else:
+                equal_probs[d_id] = 0.
+        prob_of_l_or_eq = np.prod(np.add(less_probs, equal_probs))
+        prob_of_l = np.prod(less_probs)
+        res_p = prob_of_l_or_eq - prob_of_l
+
+        res_probs[res_id] = res_p
+        res_id += 1
+    return DiscreteDistribution(res_values, res_probs)

@@ -8,9 +8,9 @@ import random
 class PrecedenceGraph:
     def __init__(self):
         # node_id -> {successor_ids}
-        self._edges: tt.DefaultDict[int, tt.Set[int]] = defaultdict(set)
+        self._edges: tt.Dict[int, tt.Set[int]] = dict()
         # node_id -> {predecessor_ids}
-        self._reverse_edges: tt.Dict[int, tt.Set[int]] = defaultdict(set)
+        self._reverse_edges: tt.Dict[int, tt.Set[int]] = dict()
 
     def clear(self):
         self._edges.clear()
@@ -37,11 +37,15 @@ class PrecedenceGraph:
         end_vertices = right_vertices - left_vertices
         return end_vertices
 
-    def get_copy_of_all_edges(self) -> tt.DefaultDict[int, tt.Set[int]]:
+    def get_copy_of_all_edges(self) -> tt.Dict[int, tt.Set[int]]:
         return copy.deepcopy(self._edges)
 
     def add_edge(self, fr_id: int, to_id: int) -> None:
+        if fr_id not in self._edges.keys():
+            self._edges[fr_id] = set()
         self._edges[fr_id].add(to_id)
+        if to_id not in self._reverse_edges.keys():
+            self._reverse_edges[to_id] = set()
         self._reverse_edges[to_id].add(fr_id)
 
     def remove_edge(self, fr_id: int, to_id: int) -> None:
@@ -133,19 +137,42 @@ class PrecedenceGraph:
             order.append(v)
         return order
 
+    def topological_sort(self, reverse: bool = False) -> tt.List[int]:
+        start_nodes = self.get_start_ids() if not reverse else self.get_end_ids()
+        edges = self._edges if not reverse else self._reverse_edges
+        reverse_edges = self._reverse_edges if not reverse else self._edges
+
+        order = list(start_nodes)
+        scheduled = start_nodes
+        candidates = set()
+        for i in order:
+            candidates = candidates.union(edges[i])
+        while candidates:
+            for c in candidates:
+                if reverse_edges[c] <= scheduled:
+                    order.append(c)
+                    scheduled.add(c)
+                    candidates.remove(c)
+                    new_candidates = {} if c not in edges.keys() else edges[c]
+                    candidates = candidates.union(new_candidates)
+                    break
+
+        return order
+
+
     def get_successors(self, fr_id: int) -> tt.Set[int]:
-        return self._edges[fr_id]
+        return self._edges[fr_id].copy() if fr_id in self._edges.keys() else set()
 
     def get_predecessors(self, fr_id: int) -> tt.Set[int]:
-        return self._reverse_edges[fr_id]
+        return self._reverse_edges[fr_id].copy() if fr_id in self._reverse_edges.keys() else set()
 
     def get_all_successors(self, v_id: int) -> tt.Set[int]:
-        return set(self.bfs(v_id, False)[1:])
+        return set(self.bfs(v_id, False)[1:]).copy()
 
     def get_all_predecessors(self, v_id) -> tt.Set[int]:
-        return set(self.bfs(v_id, True)[1:])
+        return set(self.bfs(v_id, True)[1:]).copy()
 
-    def print_itself(self) -> None:
+    def print_itself(self):
         print(f'num nodes: {len(self.get_all_ids())}')
         print(f'num edges: {sum((len(to_ids) for to_ids in self._edges.values()))}')
         print(f'start ids: {self.get_start_ids()}')
