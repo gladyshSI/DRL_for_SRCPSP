@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 from collections import defaultdict
 import typing as tt
@@ -58,10 +59,6 @@ class Distribution(ABC):
         """generates random value from the distribution"""
         pass
 
-    def print_itself(self) -> None:
-        """prints distribution itself"""
-        pass
-
 
 class DiscreteDistribution(Distribution):
     def __init__(self, values: npt.NDArray[int], probs: npt.NDArray[float]):
@@ -69,8 +66,13 @@ class DiscreteDistribution(Distribution):
             raise ValueError("Probabilities and values must have the same shape.")
         if values.size != len(set(values)):
             raise ValueError("All values should be different must have the same shape.")
-        order = values.argsort()
-        self.values, self.probs = values[order], probs[order]
+        self.values = values
+        self.probs = probs
+        self._sort_values()
+
+    def _sort_values(self):
+        order = self.values.argsort()
+        self.values, self.probs = self.values[order], self.probs[order]
 
     @classmethod
     def _set_from_dict(cls, probs: tt.Dict[int, float]):
@@ -111,6 +113,26 @@ class DiscreteDistribution(Distribution):
 
     def __radd__(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
         return self.__add__(other)
+
+    def __sub__(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
+        if isinstance(other, DiscreteDistribution):
+            neg_other = copy.deepcopy(other)
+            neg_other.values *= -1
+            neg_other._sort_values()
+            return self.__add__(neg_other)
+        if isinstance(other, int):
+            return self.__add__(-other)
+        else:
+            raise TypeError("other in the add function should be one of int or DiscreteDistribution")
+
+    def __rsub__(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
+        if isinstance(other, int):
+            neg_self = copy.deepcopy(self)
+            neg_self.values *= -1
+            neg_self._sort_values()
+            return neg_self + other
+        elif not isinstance(other, DiscreteDistribution):
+            raise TypeError("other in the add function should be one of int or DiscreteDistribution")
 
     def shift(self, shift: int) -> Distribution:
         res_values = self.values + shift
@@ -187,8 +209,8 @@ class DiscreteDistribution(Distribution):
         size = 0 if size is None else size
         return np.random.choice(self.values, size, p=self.probs)
 
-    def print_itself(self):
-        print([(int(v), float(p)) for v, p in zip(self.values, self.probs)])
+    def __repr__(self):
+        return str([(int(v), round(float(p), 4)) for v, p in zip(self.values, self.probs)])
 
 
 def max_of_discr_distributions(distributions: tt.List[DiscreteDistribution]) -> DiscreteDistribution:

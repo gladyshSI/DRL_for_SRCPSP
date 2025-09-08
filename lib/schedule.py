@@ -36,7 +36,22 @@ class Schedule:
                 self._reverse_edges[to_id] = dict()
                 self._reverse_edges[to_id][fr_id] = 0
 
-    #
+    def clear(self) -> None:
+        self._w_exec_seq = [[] for _ in range(self._problem.n_workers)]
+        self._w_st_times = [[] for _ in range(self._problem.n_workers)]
+        self._scheduled.clear()
+        self._candidates = self._problem.graph.get_start_ids()
+        self._j_schedule.clear()
+        self._edges.clear()
+        self._reverse_edges.clear()
+
+        for fr_id, to_ids in self._problem.graph.get_copy_of_all_edges().items():
+            self._edges[fr_id] = dict()
+            for to_id in to_ids:
+                self._edges[fr_id][to_id] = 0
+                self._reverse_edges[to_id] = dict()
+                self._reverse_edges[to_id][fr_id] = 0
+
     def nearest_left_and_right_job_ids(self, worker_id: int, time_to_sch: int) -> (int | None, int | None):
         idx = np.searchsorted(self._w_st_times[worker_id], time_to_sch)
         left_job_id = self._w_exec_seq[worker_id][idx - 1] if idx - 1 >= 0 else None
@@ -265,3 +280,6 @@ class Schedule:
             overlap_distributions[j_id] = d
 
         return overlap_distributions
+
+    def is_complete(self) -> bool:
+        return True if len(self._candidates) == 0 else False

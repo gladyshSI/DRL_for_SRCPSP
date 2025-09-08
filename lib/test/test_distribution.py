@@ -1,3 +1,4 @@
+import copy
 from unittest import TestCase
 
 import numpy as np
@@ -30,6 +31,13 @@ class TestDiscreteDistribution(TestCase):
         print(d3.probs)
         self.assertTrue(np.array_equal(np.array([-1, 0, 1, 2, 3]), d3.values))
         self.assertTrue(np.array_equal(np.array([0.05, 0.13, 0.43, 0.25, 0.14]), d3.probs.round(4)))
+
+    def test_sub(self):
+        d3 = self.d1 - self.d2
+        print(d3.values)
+        print(d3.probs)
+        self.assertTrue(np.array_equal(np.array([-3, -2, -1, 0, 1]), d3.values))
+        self.assertTrue(np.array_equal(np.array([0.02, 0.07, 0.25, 0.31, 0.35]), d3.probs.round(4)))
 
     def test_shift(self):
         d_shifted = self.d1.shift(1)
