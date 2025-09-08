@@ -69,16 +69,20 @@ class PrecedenceGraph:
 
         # Step 1: Connect two dummy tasks with start and end tasks
         dummy_st_id = 0
-        # self._edges[dummy_st_id] = []
+        self._edges[dummy_st_id] = set()
         for i in range(start_num):
             to_id = i + 1
             self._edges[dummy_st_id].add(to_id)
+            if to_id not in self._reverse_edges.keys():
+                self._reverse_edges[to_id] = set()
             self._reverse_edges[to_id].add(dummy_st_id)
 
         dummy_end_id = number_of_nodes - 1
-        # self._reverse_edges[dummy_end_id] = []
+        self._reverse_edges[dummy_end_id] = set()
         for i in range(end_num):
             fr_id = number_of_nodes - 2 - i
+            if fr_id not in self._edges.keys():
+                self._edges[fr_id] = set()
             self._edges[fr_id].add(dummy_end_id)
             self._reverse_edges[dummy_end_id].add(fr_id)
         # print("Step 1: edges: ", self._edges)
@@ -172,10 +176,28 @@ class PrecedenceGraph:
     def get_all_predecessors(self, v_id) -> tt.Set[int]:
         return set(self.bfs(v_id, True)[1:]).copy()
 
+    def to_dict(self) -> dict:
+        return {'edges': [(fr_id, to_id) for fr_id, to_ids in self._edges.items() for to_id in to_ids]}
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        edges = d.get('edges')
+        g = cls()
+        for fr_id, to_ids in edges:
+            g.add_edge(fr_id, to_ids)
+        return g
+
     def print_itself(self):
         print(f'num nodes: {len(self.get_all_ids())}')
         print(f'num edges: {sum((len(to_ids) for to_ids in self._edges.values()))}')
         print(f'start ids: {self.get_start_ids()}')
         print(f'end ids: {self.get_end_ids()}')
         print(f'edges: {self._edges}')
+
+    def __repr__(self):
+        to_print = (f'num nodes: {len(self.get_all_ids())}\n' +
+                    f'num edges: {sum((len(to_ids) for to_ids in self._edges.values()))}\n' +
+                    f'start ids: {self.get_start_ids()}\n' +
+                    f'edges: {self._edges}')
+        return to_print
 

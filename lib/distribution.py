@@ -59,6 +59,11 @@ class Distribution(ABC):
         """generates random value from the distribution"""
         pass
 
+    @abstractmethod
+    def to_dict(self) -> dict:
+        """returns dictionary representation of distribution"""
+        pass
+
 
 class DiscreteDistribution(Distribution):
     def __init__(self, values: npt.NDArray[int], probs: npt.NDArray[float]):
@@ -73,11 +78,6 @@ class DiscreteDistribution(Distribution):
     def _sort_values(self):
         order = self.values.argsort()
         self.values, self.probs = self.values[order], self.probs[order]
-
-    @classmethod
-    def _set_from_dict(cls, probs: tt.Dict[int, float]):
-        v, p = np.array(list(probs.keys())), np.array(list(probs.values()))
-        return DiscreteDistribution(v, p)
 
     @classmethod
     def set_uniform(cls, min_value: int, max_value: int):
@@ -208,6 +208,14 @@ class DiscreteDistribution(Distribution):
     def generate(self, size: int | None = None) -> int:
         size = 0 if size is None else size
         return np.random.choice(self.values, size, p=self.probs)
+
+    def to_dict(self) -> dict:
+        return {int(v): float(p) for v, p in zip(self.values, self.probs)}
+
+    @classmethod
+    def from_dict(cls, data: tt.Dict[int, float]):
+        v, p = np.array(list(data.keys())), np.array(list(data.values()))
+        return DiscreteDistribution(v, p)
 
     def __repr__(self):
         return str([(int(v), round(float(p), 4)) for v, p in zip(self.values, self.probs)])

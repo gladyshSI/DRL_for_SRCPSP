@@ -2,7 +2,7 @@ import copy
 
 import numpy as np
 
-from lib.distribution import Distribution
+from lib.distribution import Distribution, DiscreteDistribution
 
 
 class Job:
@@ -41,8 +41,17 @@ class Job:
     def set_distribution(self, dur_dist: Distribution) -> None:
         self._distribution = dur_dist.normalize()
 
-    def print_itself(self):
-        print(f'id: {self._id}, dur: {self._duration}, distribution: {self._distribution.print_itself()}')
+    def to_dict(self) -> dict:
+        return {'id': self._id,
+                'duration': self._duration,
+                'distribution': self._distribution.to_dict()}
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return cls(data.get('id'), data.get('duration'), DiscreteDistribution.from_dict(data.get('distribution')))
+
+    def __repr__(self):
+        return f'id: {self._id}, dur: {self._duration}, distribution: {self._distribution}'
 
 #
 #
