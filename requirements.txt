@@ -1,4 +1,9 @@
 gymnasium~=1.2.0
 numpy~=2.2.6
+torch
+torch_geometric
+pandas
 tqdm~=4.67.1
 docplex>=2.27.239
+plotly
+matplotlib

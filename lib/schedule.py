@@ -1,4 +1,5 @@
 import copy
+import json
 from collections import defaultdict, deque
 from itertools import repeat, starmap
 
@@ -8,11 +9,14 @@ from lib.problem import Problem
 from lib.distribution import Distribution, DiscreteDistribution, max_of_discr_distributions
 
 import numpy as np
+import pandas as pd
 import numpy.typing as npt
 import typing as tt
 from tqdm import tqdm
 import multiprocessing as mp
 import time
+import plotly.express as px
+import plotly.graph_objects as go
 
 
 class Schedule:
@@ -168,6 +172,27 @@ class Schedule:
                 self._reverse_edges[right_neighbor_id] = dict()
             self._reverse_edges[right_neighbor_id][job_id] = time_lag
 
+    def get_problem(self):
+        return copy.deepcopy(self._problem)
+
+    def get_scheduled(self):
+        return copy.deepcopy(self._scheduled)
+
+    def get_candidates(self):
+        return copy.deepcopy(self._candidates)
+
+    def get_execution_order(self):
+        return copy.deepcopy(self._w_exec_seq)
+
+    def get_scheduled_worker(self, job_id: int) -> None | int:
+        return None if job_id not in self._scheduled else self._j_schedule[job_id][0]
+
+    def get_scheduled_start_time(self, job_id: int) -> None | int:
+        return None if job_id not in self._scheduled else self._j_schedule[job_id][1]
+
+    def get_scheduled_end_time(self, job_id: int) -> None | int:
+        return None if job_id not in self._scheduled else self._j_schedule[job_id][1] + self._problem.jobs[job_id].get_duration()
+
     def get_first_jobs(self) -> tt.Set[int]:
         return set([w_sch[0] for w_sch in self._w_exec_seq if len(w_sch) > 0])
 
@@ -175,7 +200,8 @@ class Schedule:
         return set([w_sch[-1] for w_sch in self._w_exec_seq if len(w_sch) > 0])
 
     def get_makespan(self):
-        return np.max([w_st_t[-1] for w_st_t in self._w_st_times if len(w_st_t) > 0] + [0])
+        return np.max([self._w_st_times[i][-1] + self._problem.jobs[self._w_exec_seq[i][-1]].get_duration()
+                       for i in range(len(self._w_st_times)) if len(self._w_st_times[i]) > 0] + [0])
 
     def topological_sort(self, reverse: bool = False) -> tt.List[int]:
         graph = self._problem.graph
@@ -283,3 +309,82 @@ class Schedule:
 
     def is_complete(self) -> bool:
         return True if len(self._candidates) == 0 else False
+
+    def to_pandas(self):
+        df = pd.DataFrame(columns=['Task', 'Start', 'Finish', 'Resource'])
+        for j, (w, st) in self._j_schedule.items():
+            duration = self._problem.jobs[j].get_duration()
+            df.loc[-1] = [j, st, st + duration, w]
+            df.index = df.index + 1
+            df = df.sort_index()
+        return df
+
+    def to_dict(self):
+        return {'problem': self._problem.to_dict(),
+                'j_schedule': [(j, w, st) for j, (w, st) in self._j_schedule.items()]}
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        problem = Problem.from_dict(data['problem'])
+        sch = cls(problem=problem)
+        for j, w, st in data['j_schedule']:
+            sch.schedule_job(worker_id=w, job_id=j, start_time=st)
+        return sch
+
+    def save_to_file(self, path_to_file: str):
+        with open(path_to_file, "w") as f:
+            json.dump(self.to_dict(), f)
+
+    @classmethod
+    def read_from_file(cls, path_to_file: str):
+        with open(path_to_file, "r") as f:
+            data = json.load(f)
+
+        return cls.from_dict(data)
+
+def draw_schedule(schedule: Schedule, colors=None) -> None:
+    df = schedule.to_pandas().copy()
+    # Ensure numeric types
+    df["Start"] = pd.to_numeric(df["Start"])
+    df["Finish"] = pd.to_numeric(df["Finish"])
+    # Duration
+    df["delta"] = df["Finish"] - df["Start"]
+    # Color mapping
+    if colors is None:
+        n_tasks = df["Task"].nunique()
+        colors = {task: i / max(1, n_tasks - 1) for i, task in enumerate(sorted(df["Task"].unique()))}
+    df["Color"] = df["Task"].map(colors)
+    # Build figure
+    fig = go.Figure()
+    for _, row in df.iterrows():
+        fig.add_trace(go.Bar(
+            x=[row["delta"]],  # width of bar
+            y=[row["Resource"]],  # resource on y-axis
+            base=row["Start"],  # bar starts at "Start"
+            orientation="h",  # horizontal bars
+            text=str(int(row["Task"])),  # label with Task
+            marker=dict(
+                color=row["Color"],
+                colorscale=[(0, "green"), (0.5, "yellow"), (1, "red")],
+                cmin=0,
+                cmax=1
+            ),
+            hovertemplate=(
+                f"Task: {row['Task']}<br>"
+                f"Resource: {row['Resource']}<br>"
+                f"Start: {row['Start']}<br>"
+                f"Finish: {row['Finish']}<br>"
+                f"Duration: {row['delta']}<extra></extra>"
+            ),
+        ))
+    # Layout
+    fig.update_layout(
+        barmode="stack",
+        xaxis=dict(title="Time", type="linear"),
+        yaxis=dict(title="Resource", autorange="reversed"),
+        title="Schedule Gantt Chart",
+        showlegend=False,
+        bargap=0.2,
+        height=400 + 30 * df["Resource"].nunique()
+    )
+    fig.show()

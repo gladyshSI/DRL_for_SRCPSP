@@ -1,3 +1,4 @@
+import numpy as np
 from docplex.cp.model import *
 
 from lib.problem import Problem
@@ -13,43 +14,44 @@ def make_schedule_from_cplex_stochastic_multi_mode(problem: Problem, msol, r_ik,
     sch = Schedule(problem)
     starting_times = dict()  # task_id -> st
     chosen_resources = dict()  # task_id -> res
-    for i in problem.get_all_ids():
-        for k in range(problem.get_machines_num()):
+    for i in range(problem.n_jobs):
+        for k in range(problem.n_workers):
             var_sol = msol.get_var_solution(r_ik[(i, k)])
             if var_sol.is_present():
                 starting_times[i] = var_sol.get_start()
                 chosen_resources[i] = k
 
-    for i in problem.get_all_ids():
-        sch.schedule_task(chosen_resources[i], i, starting_times[i])
+    for i in range(problem.n_jobs):
+        sch.schedule_job(chosen_resources[i], i, starting_times[i])
 
     return sch
 
-def cplex_stochastic_multi_mode_buf(problem: Problem, obj: str, num_of_buf_modes, sum_of_buf=100, scenarios_num=200, p=None, time_limit=2, log_output=True) -> (Schedule, float):
-    tasks = list(problem.get_all_ids())
-    last_task = next(iter(problem.get_end_ids()))
-    resources = list(range(problem.get_machines_num()))
+
+def cplex_stochastic_multi_mode_buf(problem: Problem, obj: str, num_of_buf_modes, sum_of_buf=100, scenarios_num=200,
+                                    p=None, time_limit=2, log_output=True) -> (Schedule, float):
+    tasks = list(range(problem.n_jobs))
+    last_task = next(iter(problem.graph.get_end_ids()))
+    resources = list(range(problem.n_workers))
 
     edge_list = []
-    for i, js in problem.get_copy_of_all_edges().items():
+    for i, js in problem.graph.get_copy_of_all_edges().items():
         for j in js:
             edge_list.append((i, j))
 
-    if p == None:
+    if p is None:
         p = []
         for v in tasks:
-            p.append(problem.get_duration(v))
+            p.append(problem.jobs[v].get_duration())
 
     if num_of_buf_modes < 1:
         raise ValueError("num_of_buf_modes includes buf=0, so it should be at least 1")
     m = num_of_buf_modes  # Number of buffer modes (including 0)
     p_buf_modes = [[pi + buf for buf in range(m)] for pi in p]  # initial durations with different buffer times
 
-    scenarios = [p]
-    for _ in range(1, scenarios_num):
-        new_durations = problem.get_random_durations_from_distributions()
-        ps = [new_durations[i] for i in tasks]
-        scenarios.append(ps)
+    scenarios = np.empty(shape=(scenarios_num, problem.n_jobs), dtype=int)
+    scenarios[0, :] = np.array(p)
+    for i in tasks:
+        scenarios[1:, i] = problem.jobs[i]._distribution.generate(scenarios_num - 1).astype(int)
 
     # MODEL
     mdl = CpoModel()

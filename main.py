@@ -3,10 +3,11 @@ import os
 import time
 
 import numpy as np
+import torch
+
 from lib.distribution import DiscreteDistribution
 from lib.problem import Problem
 import multiprocessing as mp
 
-a = np.array([[1, 2, 3], [4, 5, 6]])
-a *= -1
-print(a)
+a = (0.8, 0.1, 0.1)
+print(sum(a))

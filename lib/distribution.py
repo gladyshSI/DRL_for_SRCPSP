@@ -214,7 +214,7 @@ class DiscreteDistribution(Distribution):
 
     @classmethod
     def from_dict(cls, data: tt.Dict[int, float]):
-        v, p = np.array(list(data.keys())), np.array(list(data.values()))
+        v, p = np.array(list(data.keys()), dtype=int), np.array(list(data.values()), dtype=float)
         return DiscreteDistribution(v, p)
 
     def __repr__(self):

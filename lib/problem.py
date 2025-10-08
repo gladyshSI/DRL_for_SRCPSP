@@ -26,9 +26,9 @@ class Problem:
                    graph=PrecedenceGraph.from_dict(d.get('graph')),
                    jobs=[Job.from_dict(d_job) for d_job in d.get('jobs')])
 
-    def save_to_file(self, path_to_file: str):
+    def save_to_file(self, path_to_file: str, indent=None):
         with open(path_to_file, "w") as f:
-            json.dump(self.to_dict(), f)
+            json.dump(self.to_dict(), f, indent=indent)
 
     @classmethod
     def read_from_file(cls, path_to_file: str):

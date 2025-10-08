@@ -12,7 +12,7 @@ def generate_random_problems(problems_num, jobs_num, workers_num,
                              end_n_nodes_range=(1, 3),
                              init_dur_range=(5, 10),
                              delta_dur_range=(1, 4),
-                             seed=0):
+                             seed=0, indent=None):
     for _ in range(problems_num):
         g = PrecedenceGraph()
         g.random_network(number_of_nodes=jobs_num,
@@ -20,9 +20,9 @@ def generate_random_problems(problems_num, jobs_num, workers_num,
                          end_n_node_range=end_n_nodes_range,
                          seed=seed)
         print(f'GRAPH:\n{g}\n ===================')
-
         init_durations = np.random.randint(low=init_dur_range[0], high=init_dur_range[1], size=jobs_num)
         print(f'INIT DURATIONS: {init_durations}')
+
         delta_durations = np.random.randint(low=delta_dur_range[0], high=delta_dur_range[1], size=jobs_num)
         print(f'DELTA DURATIONS: {delta_durations}')
         duration_ranges = zip(init_durations - delta_durations, init_durations + delta_durations)
@@ -31,10 +31,21 @@ def generate_random_problems(problems_num, jobs_num, workers_num,
 
         p = Problem(graph=g, jobs=jobs, n_workers=workers_num, n_jobs=len(jobs))
         file_name = f'rand_p_{jobs_num}_j_{workers_num}_w_discrD_{init_dur_range[0]}_{init_dur_range[1]}_{delta_dur_range[0]}_{delta_dur_range[1]}-{_}.json'
-        p.save_to_file(save_dir + file_name)
+        p.save_to_file(save_dir + file_name, indent=indent)
+
+def generate_toy_problem(jobs_num: int, workers_num: int) -> None:
+    generate_random_problems(problems_num=1,
+                             jobs_num=jobs_num,
+                             workers_num=workers_num,
+                             save_dir='../data/toy_problems/',
+                             start_n_nodes_range=(1, 3),
+                             end_n_nodes_range=(1, 3),
+                             init_dur_range=(3, 4),
+                             delta_dur_range=(0, 2),
+                             seed=0, indent=4)
 
 
-if __name__ == '__main__':
+def main():
     save_dir = '../data/problems/'
     problems_num = 30
     start_n_nodes_range = (1, 3)
@@ -52,3 +63,8 @@ if __name__ == '__main__':
                                  start_n_nodes_range=start_n_nodes_range,
                                  init_dur_range=init_dur_range,
                                  delta_dur_range=delta_dur_range)
+
+
+if __name__ == '__main__':
+    # main()
+    generate_toy_problem(jobs_num=7, workers_num=2)
