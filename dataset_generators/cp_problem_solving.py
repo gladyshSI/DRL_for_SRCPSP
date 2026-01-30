@@ -1,9 +1,60 @@
+import copy
 import os
 import time
+import random
 
+from cp_models.cp_simple import cplex_simple
 from cp_models.cp_stochastic_bounded_buffer_num import cplex_stochastic_multi_mode_buf
 from lib.problem import Problem
 from lib.schedule import Schedule, draw_schedule
+
+
+def rand_sgs(problem: Problem, f=random.choice, seed=1) -> Schedule:
+    random.seed = seed
+    machines_num = problem.n_workers
+    res_first_free = {i: 0 for i in range(machines_num)}  # resource_id -> first free time
+
+    sch = Schedule(problem)
+    candidates = sch.get_candidates()
+    pre_candidates = dict()  # task_id -> # Number of not scheduled predecessors
+    scheduled = dict()  # task_id -> end_time
+
+    while len(candidates) > 0:
+        next_candidate = f(list(candidates))
+        duration = problem.jobs[next_candidate].get_duration()
+        # find est
+        predecessors = problem.graph.get_predecessors(next_candidate)
+        end_times = [0] + [scheduled[pred] for pred in predecessors]
+        est = max(end_times)
+        # find resource and time
+        r, first_free = min([(r, res_first_free[r]) for r in range(machines_num)], key=lambda x: x[1])
+        est = max(est, first_free)
+        # schedule
+        sch.schedule_job(worker_id=r, job_id=next_candidate, start_time=est)
+
+        # update structures
+        candidates.remove(next_candidate)
+        scheduled[next_candidate] = est + duration
+        res_first_free[r] = est + duration
+        next_pre_candidates = problem.graph.get_successors(next_candidate)
+        for c in next_pre_candidates:
+            if c not in pre_candidates.keys():
+                pre_candidates[c] = len(problem.graph.get_predecessors(c)) - 1
+            else:
+                pre_candidates[c] -= 1
+            if pre_candidates[c] == 0:
+                candidates.add(c)
+                pre_candidates.pop(c)
+
+    return sch
+
+
+def run_cp_simp(problem: Problem, time_limit: int, log_output: bool | None) -> (Schedule, float, float):
+    start_time = time.time()
+    sch, gap = cplex_simple(problem, time_limit=time_limit, log_output=log_output)
+    end_time = time.time()
+
+    return sch, gap, (end_time - start_time)
 
 
 def run_cp_stochastic_multi_mode_buf(problem: Problem, time_limit: int, parameters: dict) -> (Schedule, float, float):

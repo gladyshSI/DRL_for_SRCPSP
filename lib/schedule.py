@@ -21,7 +21,7 @@ import plotly.graph_objects as go
 
 class Schedule:
     def __init__(self, problem: Problem) -> None:
-        self._problem = problem
+        self._problem = copy.deepcopy(problem)
         self._w_exec_seq: tt.List[tt.List[int]] = [[] for _ in
                                                    range(self._problem.n_workers)]  # worker_id: [job_id] SORTED BY TIME
         self._w_st_times: tt.List[tt.List[int]] = [[] for _ in range(
@@ -181,7 +181,7 @@ class Schedule:
     def get_candidates(self):
         return copy.deepcopy(self._candidates)
 
-    def get_execution_order(self):
+    def get_execution_orders(self):
         return copy.deepcopy(self._w_exec_seq)
 
     def get_scheduled_worker(self, job_id: int) -> None | int:
@@ -225,7 +225,7 @@ class Schedule:
                     break
         return order if not reverse else list(reversed(order))
 
-    def calculate_exact_overlap_distributions(self, error_value=1e-6) -> tt.Dict[int, Distribution]:
+    def calculate_exact_overlap_distributions(self, error_value: float = 1e-6) -> tt.Dict[int, Distribution]:
         end_times_distribution = dict()  # task_id -> Distribution
         overlap_distributions = dict()  # task_id -> Distribution
 
@@ -245,8 +245,16 @@ class Schedule:
             duration_distribution = self._problem.jobs[j].get_distribution()
             end_times_distribution[j] = scheduled_start_time + overlap_distributions[j] + duration_distribution
 
-
         return overlap_distributions
+
+    def calculate_exact_end_time_distributions(self, error_value: float = 1e-6) -> tt.Dict[int, Distribution]:
+        overlaps = self.calculate_exact_overlap_distributions(error_value)
+        end_t_distributions = dict()
+        for i, overlap_distribution in overlaps.items():
+            scheduled_st_t = self.get_scheduled_start_time(i)
+            dur_distribution = self._problem.jobs[i].get_distribution()
+            end_t_distributions[i] = scheduled_st_t + overlap_distribution + dur_distribution
+        return end_t_distributions
 
     @staticmethod
     def calculate_new_starting_times_after_right_shift(order: tt.List[int],

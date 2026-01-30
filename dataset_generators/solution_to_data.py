@@ -1,9 +1,11 @@
 import copy
+import glob
 import os
 
 import numpy as np
 import torch
 from torch_geometric.data import Data
+from tqdm import tqdm
 
 from lib.distribution import DiscreteDistribution
 from lib.schedule import Schedule, draw_schedule
@@ -30,7 +32,7 @@ def solution_to_slices(sol: Schedule) -> list[Schedule]:
         # i += 1
 
         last_scheduled_jobs = sch.get_last_jobs()
-        exec_seq = sol.get_execution_order()
+        exec_seq = sol.get_execution_orders()
 
         # print(f'last_scheduled_jobs: {last_scheduled_jobs}')
         next_jobs_in_sol = set()
@@ -63,10 +65,10 @@ def partial_sch_to_data(part_sch_before: Schedule, part_sch_after: Schedule) -> 
     Graph structure (observed edges used by the encoder):
     data.edge_index → [2, M] long
     data.edge_attr → [M, Fe] float (optional)
-        Fe = [precedence: bool, exec_order: bool, reverse: precedence: bool, reverse_exec_order: bool]
+        Fe = [precedence: bool, exec_order: bool, reverse precedence: bool, reverse_exec_order: bool]
 
     Pairs for link classification (positive + negatives):
-    data.edge_predict_index → [2, P] long
+    data.edge_predict_index → [2, P] long containing both positives and negatives from last scheduled to candidates
     data.edge_predict_label → [P] float (1.0 = positive, 0.0 = negative)
     data.edge_predict_value → [P_pos] float (values for positives only).
     """
@@ -76,32 +78,32 @@ def partial_sch_to_data(part_sch_before: Schedule, part_sch_after: Schedule) -> 
     prev_candidates = part_sch_before.get_candidates()
 
     # Calculate exact end time distributions
-    overlaps = part_sch_before.calculate_exact_overlap_distributions()
-    end_t_distributions = dict()
-    for i, overlap_distribution in overlaps.items():
-        scheduled_st_t = part_sch_before.get_scheduled_start_time(i)
-        dur_distribution = problem.jobs[i].get_distribution()
-        end_t_distributions[i] = scheduled_st_t + overlap_distribution + dur_distribution
+    end_t_distributions = part_sch_before.calculate_exact_end_time_distributions()
+    # overlaps = part_sch_before.calculate_exact_overlap_distributions()
+    # end_t_distributions = dict()
+    # for i, overlap_distribution in overlaps.items():
+    #     scheduled_st_t = part_sch_before.get_scheduled_start_time(i)
+    #     dur_distribution = problem.jobs[i].get_distribution()
+    #     end_t_distributions[i] = scheduled_st_t + overlap_distribution + dur_distribution
 
     # Precedence relation edges
     precedence_fr_ids = []
     precedence_to_ids = []
     for fr_id, to_ids in problem.graph.get_copy_of_all_edges().items():
-        for to_id in to_ids:
-            precedence_fr_ids.append(fr_id)
-            precedence_to_ids.append(to_id)
+        precedence_fr_ids.extend(fr_id for _ in to_ids)
+        precedence_to_ids.extend(to_ids)
 
     # Execution order edges
     execution_order_fr_ids = []
     execution_order_to_ids = []
-    for w_exec_order in part_sch_before.get_execution_order():
+    for w_exec_order in part_sch_before.get_execution_orders():
         for i in range(len(w_exec_order) - 1):
             execution_order_fr_ids.append(w_exec_order[i])
             execution_order_to_ids.append(w_exec_order[i + 1])
 
     # Make dummy jobs at the end of each workers' schedule.
     # dummy job for worker w_i has id = max_job_id + 1 + w_i
-    for w_id, w_exec_order in enumerate(part_sch_before.get_execution_order()):
+    for w_id, w_exec_order in enumerate(part_sch_before.get_execution_orders()):
         if len(w_exec_order) >= 1:
             execution_order_fr_ids.append(w_exec_order[-1])
             execution_order_to_ids.append(problem.n_jobs + w_id)
@@ -114,24 +116,21 @@ def partial_sch_to_data(part_sch_before: Schedule, part_sch_after: Schedule) -> 
     lengths_to_predict = []
     edges_not_to_predict_fr_ids = []
     edges_not_to_predict_to_ids = []
-    for w_id, w_exec_order in enumerate(part_sch_after.get_execution_order()):
+    for w_id, w_exec_order in enumerate(part_sch_after.get_execution_orders()):
         if len(w_exec_order) >= 1 and w_exec_order[-1] in prev_candidates:
             fr_id = problem.n_jobs + w_id
             to_id = w_exec_order[-1]
             edges_to_predict_fr_ids.append(fr_id)
             edges_to_predict_to_ids.append(to_id)
             set_of_all_possible_edges_to_predict.remove((fr_id, to_id))
+            # length to predict = buffer time after previous scheduled job on this machine or 0 time point
+            prev_end_t = 0 if len(w_exec_order) == 1 else part_sch_after.get_scheduled_end_time(w_exec_order[-2])
+            lengths_to_predict.append(part_sch_after.get_scheduled_start_time(to_id) - prev_end_t)
 
-            sch_st_t_to_id = part_sch_after.get_scheduled_start_time(to_id)
-            pred_end_ts = [part_sch_after.get_scheduled_end_time(pred_id) for pred_id in problem.graph.get_predecessors(to_id)]
-            if len(w_exec_order) >= 2:
-                pred_end_ts.append(part_sch_after.get_scheduled_end_time(w_exec_order[-2]))
-            max_pred_end_t = 0 if len(pred_end_ts) == 0 else max(pred_end_ts)
-            lengths_to_predict.append(sch_st_t_to_id - max_pred_end_t)
+    # the rest of edges that are not in to_predict add to not_to_predict
     for fr_id, to_id in set_of_all_possible_edges_to_predict:
         edges_not_to_predict_fr_ids.append(fr_id)
         edges_not_to_predict_to_ids.append(to_id)
-
 
     w_id_to_last_ct_distribution = dict()
     # Vertex attributes:
@@ -153,7 +152,7 @@ def partial_sch_to_data(part_sch_before: Schedule, part_sch_after: Schedule) -> 
 
         # save ct distribution if it is prev last performed
         if w_id > 0:
-            w_exec_order = part_sch_before.get_execution_order()[w_id - 1]
+            w_exec_order = part_sch_before.get_execution_orders()[w_id - 1]
             if len(w_exec_order) >= 1 and w_exec_order[-1] == j_id:
                 w_id_to_last_ct_distribution[w_id - 1] = end_t_distributions[j_id]
 
@@ -182,14 +181,14 @@ def partial_sch_to_data(part_sch_before: Schedule, part_sch_after: Schedule) -> 
         edge_predict_index=torch.LongTensor([edges_to_predict_fr_ids + edges_not_to_predict_fr_ids,
                                              edges_to_predict_to_ids + edges_not_to_predict_to_ids]),  # [2, P]
         edge_predict_label=torch.FloatTensor([1.]*len(edges_to_predict_fr_ids) + [0.]*len(edges_not_to_predict_fr_ids)),  # [P] float(1.0 = positive, 0.0 = negative)
-        edge_predict_value=torch.FloatTensor(lengths_to_predict)
+        edge_predict_value=torch.FloatTensor(lengths_to_predict + [0.]*len(edges_not_to_predict_fr_ids))  # [P]
     )
     return data
 
 
 def main():
     solutions_dir = '../data/solutions/'
-    datasets_dir = '../data/datasets/'
+    datasets_dir = '../data/datasets_with_length/'
     problems_num = 30
     init_dur_range = (5, 10)
     delta_dur_range = (1, 4)
@@ -206,14 +205,28 @@ def main():
 
             solution = Schedule.read_from_file(solution_path)
             slices = solution_to_slices(solution)
-            print(f'slices len: {len(slices)}')
+            print(f'jobs_num: {jobs_num}, problem_id: {problem_id}, slices len: {len(slices)}')
             for i in range(len(slices) - 1):
                 data = partial_sch_to_data(slices[i], slices[i + 1])
                 torch.save(data, datasets_dir + solution_name[:-5] + f'data_slice_{i}.pt')
 
 
+def main_occidata():
+    solutions_dir = '../data/occidata/solutions/'
+    datasets_dir = '../data/occidata/datasets/'
+    all_solution_files = glob.glob(os.path.join(solutions_dir, "*.json"))
+    for solution_file in all_solution_files:
+        solution_name = solution_file.split('\\')[-1].split('.')[0]
+        solution = Schedule.read_from_file(solution_file)
+        slices = solution_to_slices(solution)
+        print(f'solution_name: {solution_name}, slices len: {len(slices)}')
+        for i in range(len(slices) - 1):
+            data = partial_sch_to_data(slices[i], slices[i + 1])
+            torch.save(data, datasets_dir + solution_name + f'_data_slice_{i}.pt')
+
+
 if __name__ == '__main__':
-    main()
+    main_occidata()
     # schedule = Schedule.read_from_file('../data/toy_solutions/sol_toy1.json')
     # folder_to_save = '../data/toy_datasets/'
     # # draw_schedule(schedule)

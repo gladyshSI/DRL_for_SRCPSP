@@ -57,7 +57,8 @@ def evaluate_link_prediction(model, loader, device, use_dot=False):
 
 def train_link_prediction(model, train_loader, val_loader, device, epochs=10, pos_weight=1., lr=1e-3, use_dot=False):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = torch.nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.tensor([pos_weight]))
+    pos_weight = None if pos_weight is None else torch.tensor([pos_weight])
+    criterion = torch.nn.BCEWithLogitsLoss(reduction='mean', pos_weight=pos_weight)
 
     best_val_auc = -float('inf')
     for epoch in range(epochs):

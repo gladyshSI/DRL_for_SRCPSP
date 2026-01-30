@@ -86,6 +86,14 @@ class DiscreteDistribution(Distribution):
         probs = np.full((v_num, ), 1 / v_num)
         return DiscreteDistribution(values, probs)
 
+    @classmethod
+    def set_trimodal_symmetric(cls, value: int, p0: float):
+        if p0 > 1. or p0 < 0.:
+            raise ValueError("p0 must be between 0 and 1.")
+        values = np.array([value-1, value, value+1])
+        probs = np.array([(1 - p0)/2, p0, (1 - p0)/2])
+        return DiscreteDistribution(values, probs)
+
     def e(self) -> float:
         return float(self.values @ self.probs.T)
 
@@ -109,7 +117,7 @@ class DiscreteDistribution(Distribution):
         elif isinstance(other, int):
             return DiscreteDistribution(self.values + other, self.probs)
         else:
-            raise TypeError("other in the add function should be one of int or DiscreteDistribution")
+            raise TypeError(f'other {other} in the add function should be one of int or DiscreteDistribution, but is {type(other)}')
 
     def __radd__(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
         return self.__add__(other)
@@ -211,6 +219,9 @@ class DiscreteDistribution(Distribution):
 
     def to_dict(self) -> dict:
         return {int(v): float(p) for v, p in zip(self.values, self.probs)}
+
+    def to_tuples(self) -> list[(int, float)]:
+        return [(i, p) for i, p in zip(self.values, self.probs)]
 
     @classmethod
     def from_dict(cls, data: tt.Dict[int, float]):
