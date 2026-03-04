@@ -90,6 +90,18 @@ class TestDiscreteDistribution(TestCase):
         self.assertEqual(0.6, self.d1.e())
         self.assertEqual(0.7, self.d2.e())
 
+    def test_d(self):
+        v1 = np.array([-2, -1, 0, 1, 2])
+        p1 = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+        v2 = np.array([0, 1, 2, 3])
+        p2 = np.array([0.25, 0.25, 0.25, 0.25])
+
+        d1 = DiscreteDistribution(v1, p1)
+        d2 = DiscreteDistribution(v2, p2)
+
+        self.assertEqual(np.sqrt(2), d1.d())
+        self.assertEqual(np.sqrt(1.25), d2.d())
+
     def test_max_of_discr_distributions(self):
         d_max = max_of_discr_distributions([self.d3, self.d2, self.d1])
         self.assertTrue(np.array_equal(np.array([0, 1, 2, 3]), d_max.values))

@@ -94,6 +94,19 @@ class Schedule:
                 return False
         return True
 
+    def get_first_possible_st_t(self, worker_id: int, job_id: int) -> int:
+        left_neighbor_id = self._w_exec_seq[worker_id][-1] if len(self._w_exec_seq[worker_id]) > 0 else None
+        predecessors = self._problem.graph.get_predecessors(job_id)
+        if left_neighbor_id:
+            predecessors.add(left_neighbor_id)
+        max_end_time = 0
+        for pred_id in predecessors:
+            if pred_id in self._scheduled:
+                pred_st_time = self._j_schedule[pred_id][1]
+                pred_duration = self._problem.jobs[pred_id].get_duration()
+                max_end_time = max(pred_st_time + pred_duration, max_end_time)
+        return max_end_time
+
     def schedule_job(self, worker_id: int, job_id: int, start_time: int | None = None):
         """Schedules job, if start_time = None, we schedule job at the end to the first possible time + time_lag"""
         if worker_id >= self._problem.n_workers or worker_id < 0:
@@ -118,18 +131,18 @@ class Schedule:
             self._w_st_times[worker_id].insert(idx_to_insert, start_time)
             self._w_exec_seq[worker_id].insert(idx_to_insert, job_id)
         else:
-            left_neighbor_id = self._w_exec_seq[worker_id][-1] if len(self._w_exec_seq[worker_id]) > 0 else None
-            predecessors = self._problem.graph.get_predecessors(job_id)
-            if left_neighbor_id:
-                predecessors.add(left_neighbor_id)
-            max_end_time = 0
-            for pred_id in predecessors:
-                if pred_id in self._scheduled:
-                    pred_st_time = self._j_schedule[pred_id][1]
-                    pred_duration = self._problem.jobs[pred_id].get_duration()
-                    max_end_time = max(pred_st_time + pred_duration, max_end_time)
-            start_time = max_end_time
-            self._w_st_times[worker_id].append(max_end_time)
+            # left_neighbor_id = self._w_exec_seq[worker_id][-1] if len(self._w_exec_seq[worker_id]) > 0 else None
+            # predecessors = self._problem.graph.get_predecessors(job_id)
+            # if left_neighbor_id:
+            #     predecessors.add(left_neighbor_id)
+            # max_end_time = 0
+            # for pred_id in predecessors:
+            #     if pred_id in self._scheduled:
+            #         pred_st_time = self._j_schedule[pred_id][1]
+            #         pred_duration = self._problem.jobs[pred_id].get_duration()
+            #         max_end_time = max(pred_st_time + pred_duration, max_end_time)
+            start_time = self.get_first_possible_st_t(worker_id, job_id)
+            self._w_st_times[worker_id].append(start_time)
             self._w_exec_seq[worker_id].append(job_id)
         # UPDATE: self._candidates:    # jobs that can be scheduled on the next step
         self._candidates.remove(job_id)

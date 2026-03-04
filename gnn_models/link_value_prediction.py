@@ -4,16 +4,23 @@ from torch_geometric.nn import GATv2Conv
 
 # Simple GNN to produce node embeddings
 class SimpleLinkValuePredictor(torch.nn.Module):
-    def __init__(self, conv_layer, in_dim: int, hid_dim: int, out_dim: int, num_layers: int, edge_dim=None):
+    def __init__(self, conv_layer, in_dim: int, hid_dim: int, out_dim: int, num_layers: int, edge_dim=None, heads: int = 1):
         super().__init__()
         if num_layers < 2:
             raise ValueError('Number of layers must be at least 2')
+        self.config = {'conv_class': conv_layer.__name__,
+                       'in_dim': in_dim,
+                       'hid_dim': hid_dim,
+                       'out_dim': out_dim,
+                       'num_layers': num_layers,
+                       'edge_dim': edge_dim,
+                       'heads': heads}
 
         self.convs = torch.nn.ModuleList()
-        self.convs.append(conv_layer(in_dim, hid_dim, edge_dim=edge_dim))
+        self.convs.append(conv_layer(in_dim, hid_dim, edge_dim=edge_dim, heads=heads, concat=False))
         for _ in range(num_layers - 2):
-            self.convs.append(conv_layer(hid_dim, hid_dim, edge_dim=edge_dim))
-        self.convs.append(conv_layer(hid_dim, out_dim, edge_dim=edge_dim))
+            self.convs.append(conv_layer(hid_dim, hid_dim, edge_dim=edge_dim, heads=heads, concat=False))
+        self.convs.append(conv_layer(hid_dim, out_dim, edge_dim=edge_dim, heads=heads, concat=False))
         self.relu = torch.nn.ReLU()
 
         # Edge head: takes [z_u || z_v] -> outputs [logit, value]

@@ -41,4 +41,16 @@ class Problem:
         return str(self.to_dict())
 
 
+def get_longest_paths(problem: Problem, reverse: bool = False) -> dict[int, int]:  # job_id -> the longest path's length
+    topological_sorted_js = problem.graph.topological_sort(reverse=reverse)
+    longest_paths = dict()
+    for j in topological_sorted_js:
+        longest_paths[j] = 0
+    for j in topological_sorted_js:
+        predecessors = problem.graph.get_predecessors(j) if not reverse else problem.graph.get_successors(j)
+        new_value = max([longest_paths[j]] + [longest_paths[pred_id] + problem.jobs[pred_id].get_duration() for
+                       pred_id in predecessors])
+        longest_paths[j] = new_value
+
+    return longest_paths
 

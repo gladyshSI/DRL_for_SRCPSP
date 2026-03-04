@@ -49,6 +49,33 @@ def rand_sgs(problem: Problem, f=random.choice, seed=1) -> Schedule:
     return sch
 
 
+def rand_sgs_best_of_k(problem: Problem, k: int) -> Schedule:
+    n_workers = problem.n_workers
+    sch = Schedule(problem)
+    workers = list(range(n_workers))
+    candidates = sch.get_candidates()
+
+    while len(candidates) > 0:
+        n_to_sch = min(n_workers, len(candidates))
+        best_j_var, best_w_var, best_obj = [], [], float('inf')
+        for i in range(k):
+            sch_to_try = copy.deepcopy(sch)
+            j_to_sch = random.sample(candidates, n_to_sch)
+            w_to_sch = random.sample(workers, n_to_sch)
+            for w_id, j_id in zip(w_to_sch, j_to_sch):
+                sch_to_try.schedule_job(worker_id=w_id, job_id=j_id)
+            obj = (sch_to_try.get_makespan() +
+                   sum([x.e() for _, x in sch_to_try.calculate_exact_overlap_distributions().items()]))
+            if obj < best_obj:
+                best_obj = obj
+                best_j_var = j_to_sch
+                best_w_var = w_to_sch
+        for w_id, j_id in zip(best_w_var, best_j_var):
+            sch.schedule_job(worker_id=w_id, job_id=j_id)
+        candidates = sch.get_candidates()
+    return sch
+
+
 def run_cp_simp(problem: Problem, time_limit: int, log_output: bool | None) -> (Schedule, float, float):
     start_time = time.time()
     sch, gap = cplex_simple(problem, time_limit=time_limit, log_output=log_output)

@@ -175,8 +175,8 @@ def single_machine_permutator(sm: SingleMachine):
 
 def optimizator(sm: SingleMachine):
     n = sm.num_jobs
-    min_sum = 2 ** n
-    min_last = 2 ** n
+    min_sum = 10**5
+    min_last = 10**5
     best_min_sum_perm = []
     best_min_last_perm = []
     print("n! = ", math.factorial(n))
@@ -185,7 +185,7 @@ def optimizator(sm: SingleMachine):
         ####
         # bft_place_optimizer(sm_perm)
         ####
-        sum_e = sum(sm_perm.calculate_ovp_e())
+        sum_e = sum([d.e() for d in sm_perm.calculate_ovp_distributions()[:-1]])
         last_e = sm_perm.calculate_ovp_distributions()[-1].e()
         if sum_e < min_sum:
             min_sum = sum_e
@@ -237,7 +237,7 @@ def exp_mirror(n: int):
 
 
 def sev_machines_exp():
-    machines_num = 2
+    machines_num = 5
     jobs_per_machine = 19
     jobs_n = jobs_per_machine * machines_num
     # jobs_x_list = [i * 0.5 / jobs_n for i in range(1, jobs_n + 1)]
@@ -269,8 +269,32 @@ def sev_machines_exp():
 
 
 if __name__ == "__main__":
-    sev_machines_exp()
+    # sev_machines_exp()
 
+    sm = SingleMachine.with_trimodal_symmetric([0.1, 0.1, 0.1, 0.1])
+    print(sm.calculate_ovp_distributions())
+    print([float(x[0]) for x in sm.calculate_ovp_distributions()])
+
+    # sm = SingleMachine.with_uniform_distributions([1, 2, 1])
+    # print(sm.names)
+    # print(sm.calculate_ovp_distributions()[-1].e() * 45)
+    # sm.swap(0, 1)
+    # print(sm.names)
+    # print(sm.calculate_ovp_distributions()[-1].e() * 45)
+    #
+    # min_sum, best_min_sum_perm, last_e, best_min_last_perm = optimizator(sm)
+    # print(f'best_min_sum_perm: {best_min_sum_perm}, min_sum: {min_sum * 45}')
+    # print(f'best_min_last_perm: {best_min_last_perm}, last_e: {last_e * 45}')
+    #
+    # sm = SingleMachine.with_uniform_distributions([1, 1, 2])
+    # l = [d.e() * 45 for d in sm.calculate_ovp_distributions()]
+    # print(l, sum(l))
+    # sm = SingleMachine.with_uniform_distributions([1, 2, 1])
+    # l = [d.e() * 45 for d in sm.calculate_ovp_distributions()]
+    # print(l, sum(l))
+    # sm = SingleMachine.with_uniform_distributions([2, 1, 1])
+    # l = [d.e() * 45 for d in sm.calculate_ovp_distributions()]
+    # print(l, sum(l))
 
 
     # exp_sort(100)

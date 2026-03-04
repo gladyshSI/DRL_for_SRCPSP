@@ -62,7 +62,12 @@ def read_jobs(path_to_file: str) -> list[Job]:
 
 
 def occidata_graph_file_path_to_ours(path_to_file: str) -> str:
-    intermediate_folder = 'parsedPSPLib/' if path_to_file.split('/')[-2] == 'parsedPSPLib' else ''
+    if path_to_file.split('/')[-2] == 'parsedPSPLib':
+        intermediate_folder = 'parsedPSPLib/'
+    elif path_to_file.split('/')[-3] == 'FasterGeneratedGraphs':
+        intermediate_folder = 'FasterGeneratedGraphs/'
+    else:
+        intermediate_folder = 'FasterGeneratedGraphs'
     return '../data/occidata/graphs/' + intermediate_folder + path_to_file.split('/')[-1]
 
 
@@ -79,8 +84,9 @@ def make_schedule_from_str(sch: Schedule, sch_str: str) -> None:
 def main():
     to_save_solutions_dir = '../data/occidata/solutions/'
     df = make_df_from_all_csv_files('../data/occidata/outputs')
-    include = {'distribution': ['uniform'], 'name': ['BBr']}
+    include = {'distribution': ['uniform'], 'name': ['BBr'], 'jobs_num': [32, 62, 122]}
     df_filtered = filter_dataframe(df, include=include, exclude={})
+    print(df_filtered.shape)
     for graph_f, jobs_f, n_workers, sch_str in tqdm(zip(df_filtered['graph_f'],
                                                         df_filtered['jobs_f'],
                                                         df_filtered['workers_num'],

@@ -55,6 +55,11 @@ class Distribution(ABC):
         pass
 
     @abstractmethod
+    def d(self) -> float:
+        """returns standard deviation value"""
+        pass
+
+    @abstractmethod
     def generate(self, size: int | None = None) -> npt.NDArray:
         """generates random value from the distribution"""
         pass
@@ -96,6 +101,9 @@ class DiscreteDistribution(Distribution):
 
     def e(self) -> float:
         return float(self.values @ self.probs.T)
+
+    def d(self) -> float:
+        return float(np.sqrt(np.square(self.values) @ self.probs.T - self.e() ** 2))
 
     def __add__(self, other: DiscreteDistribution | int) -> DiscreteDistribution:
         if isinstance(other, DiscreteDistribution):

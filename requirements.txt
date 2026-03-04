@@ -8,3 +8,4 @@ docplex>=2.27.239
 plotly
 matplotlib
 scipy
+tb-nightly
