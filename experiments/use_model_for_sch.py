@@ -3,6 +3,9 @@ import random
 
 import numpy as np
 import torch
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib import pyplot as plt
 from torch_geometric.config_store import Model
 from torch_geometric.data import Data
 from torch_geometric.nn import GATv2Conv
@@ -610,9 +613,9 @@ def main():
 
     print("COLLECT CP SOLUTIONS")
     # df = make_df_from_all_csv_files('../data/occidata/outputs')
-    # df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
-    df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
-    include = {'distribution': ['uniform'], 'name': ['DET', 'STs2', 'BBr'], 'jobs_num': [402]}
+    df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
+    # df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
+    include = {'distribution': ['uniform'], 'name': ['DET', 'STs2', 'BBr'], 'jobs_num': [62]}
     df_filtered = filter_dataframe(df, include=include, exclude={}).drop_duplicates(subset=['name', 'jobs_f'])
     print(df_filtered)
     print("ITERATE THROUGH CP SOLUTIONS, LOAD SCHEDULES")
@@ -644,10 +647,10 @@ def main():
     for jobs_f, problem in tqdm(jobs_f_to_problem.items()):
         sch_greedy = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='greedy')
         jobs_f_name_to_sch[jobs_f]["NN_greedy"] = sch_greedy
-        sch_hungarian = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='hungarian')
-        jobs_f_name_to_sch[jobs_f]["NN_hungarian"] = sch_hungarian
-        sch_nn_random = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='random')
-        jobs_f_name_to_sch[jobs_f]["NN_random"] = sch_nn_random
+        # sch_hungarian = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='hungarian')
+        # jobs_f_name_to_sch[jobs_f]["NN_hungarian"] = sch_hungarian
+        # sch_nn_random = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='random')
+        # jobs_f_name_to_sch[jobs_f]["NN_random"] = sch_nn_random
         # sch_sgs_random = rand_sgs_best_of_k(problem, k=20)
         # jobs_f_name_to_sch[jobs_f]["SGS_rand"] = sch_sgs_random
 
@@ -669,6 +672,31 @@ def main():
     for name, metrics in name_to_metrics.items():
         for metric_name, metric_vals in metrics.items():
             print(f'{name}: {metric_name}: avg = {np.mean(metric_vals)}, std = {np.std(metric_vals)}')
+    draw_box_plots(name_to_metrics, 'makespan', labelsize=20, fontsize=11)
+    draw_box_plots(name_to_metrics, 'sum_obj', labelsize=20, fontsize=11)
+    draw_box_plots(name_to_metrics, 'max_obj', labelsize=20, fontsize=11)
+
+
+def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str, labelsize: int=20, fontsize: int=20, ):
+    # model_name -> metric name -> [metric values]
+    names = list(name_to_metric.keys())
+    print('names', names)
+    instances_num = len(name_to_metric[names[0]][metric_name])
+    print('instances num', instances_num)
+
+    min_metric_for_each_instance = [min([name_to_metric[m_name][metric_name][i] for m_name in names])
+                                    for i in range(instances_num)]
+    print('len min metric', len(min_metric_for_each_instance))
+
+    delta_with_min = [[name_to_metric[model_name][metric_name][i] - min_metric_for_each_instance[i] for i in range(instances_num)]
+                      for model_name in names]
+    fig, ax = plt.subplots()
+    # ax.set_ylabel(f'{metric_name} (Δ with min.)', fontsize=fontsize//2)
+    ax.tick_params(axis='both', which='major', labelsize=labelsize)
+    ax.boxplot(delta_with_min,  tick_labels=names)
+    ax.set_title(f'{metric_name} (Δ with min.)', fontsize=fontsize)
+
+    plt.show()
 
 
 if __name__ == '__main__':

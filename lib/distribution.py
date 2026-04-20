@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from abc import ABC, abstractmethod
 from collections import defaultdict
 import typing as tt
@@ -90,6 +91,22 @@ class DiscreteDistribution(Distribution):
         v_num = max_value + 1 - min_value
         probs = np.full((v_num, ), 1 / v_num)
         return DiscreteDistribution(values, probs)
+
+    @classmethod
+    def set_norm_approx(cls, min_value: int, max_value: int, e: float = 0., d: float = 1.):
+        values = np.array(range(min_value, max_value + 1))
+        probs = 1/(math.sqrt(2*math.pi * d)) * np.exp(-(values - e)**2/(2*d))
+        d = DiscreteDistribution(values, probs)
+        d.normalize()
+        return d
+
+    @classmethod
+    def set_exp_approx(cls, min_value: int, max_value: int, lamb: float = 1.):
+        values = np.array(range(min_value, max_value + 1))
+        probs = lamb * np.exp(-lamb * (values + min_value))
+        d =  DiscreteDistribution(values, probs)
+        d.normalize()
+        return d
 
     @classmethod
     def set_trimodal_symmetric(cls, value: int, p0: float):

@@ -38,3 +38,12 @@ class Test(TestCase):
         self.assertEqual({0: 0, 1: 0, 2: 0, 3: 0, 4: 2, 5: 4}, l_pths)
         l_pths_rev = get_longest_paths(self.problem, reverse=True)
         self.assertEqual({0: 4, 1: 1, 2: 1, 3: 0, 4: 0, 5: 0}, l_pths_rev)
+
+    def test_reverse(self):
+        rev_problem = self.problem.reverse()
+        self.assertEqual(self.problem.n_jobs, rev_problem.n_jobs)
+        self.assertEqual(self.problem.n_workers, rev_problem.n_workers)
+        self.assertEqual(self.problem.jobs, rev_problem.jobs)
+        self.assertEqual(self.problem.graph.get_copy_of_all_edges(), rev_problem.graph.get_copy_of_all_reversed_edges())
+        self.assertEqual(self.problem.graph.get_copy_of_all_reversed_edges(), rev_problem.graph.get_copy_of_all_edges())
+

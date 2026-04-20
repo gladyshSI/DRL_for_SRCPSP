@@ -8,7 +8,9 @@ from torch_geometric.data import Data
 from tqdm import tqdm
 
 from lib.distribution import DiscreteDistribution
-from lib.problem import get_longest_paths
+from lib.graph import PrecedenceGraph
+from lib.job import Job
+from lib.problem import get_longest_paths, Problem
 from lib.schedule import Schedule, draw_schedule
 
 
@@ -20,22 +22,16 @@ def solution_to_slices(sol: Schedule) -> list[Schedule]:
 
     first_job_ids = problem.graph.get_start_ids()
     first_scheduled_job_ids = sol.get_first_jobs()
-    # print(f'first_job_ids: {first_job_ids}')
     for job_id in first_job_ids:
         w_id, st_t = sol.get_scheduled_worker(job_id), sol.get_scheduled_start_time(job_id)
         sch.schedule_job(w_id, job_id, st_t)
     first_slice = copy.deepcopy(sch)
     res.append(first_slice)
 
-    # i = 0
     while sch.get_candidates():
-        # print(f'i: {i}; candidates: {sch._candidates}')
-        # i += 1
-
         last_scheduled_jobs = sch.get_last_jobs()
         exec_seq = sol.get_execution_orders()
 
-        # print(f'last_scheduled_jobs: {last_scheduled_jobs}')
         next_jobs_in_sol = set()
         # fill next_jobs in solution
         for job_id in last_scheduled_jobs:
@@ -43,10 +39,8 @@ def solution_to_slices(sol: Schedule) -> list[Schedule]:
             idx = exec_seq[w_id].index(job_id) + 1
             if idx < len(exec_seq[w_id]):
                 next_jobs_in_sol.add(exec_seq[w_id][idx])
-        # print(f'next_jobs_in_sol: {next_jobs_in_sol}')
         # intersect with candidates:
         jobs_to_schedule = (next_jobs_in_sol | first_scheduled_job_ids) & sch.get_candidates()
-        # print(f'jobs_to_schedule: {jobs_to_schedule}')
         # schedule these jobs:
         for job_id in jobs_to_schedule:
             w_id, st_t = sol.get_scheduled_worker(job_id), sol.get_scheduled_start_time(job_id)

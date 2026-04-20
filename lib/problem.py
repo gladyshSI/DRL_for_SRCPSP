@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import json
 import typing as tt
@@ -18,6 +19,9 @@ class Problem:
                 'n_jobs': self.n_jobs,
                 'graph': self.graph.to_dict(),
                 'jobs': [job.to_dict() for job in self.jobs]}
+
+    def reverse(self):
+        return Problem(self.n_workers, self.n_jobs, self.graph.get_reversed_copy(), copy.deepcopy(self.jobs))
 
     @classmethod
     def from_dict(cls, d: dict):

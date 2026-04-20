@@ -12,9 +12,22 @@ class PrecedenceGraph:
         # node_id -> {predecessor_ids}
         self._reverse_edges: tt.Dict[int, tt.Set[int]] = dict()
 
+    @classmethod
+    def set_from_edges_list(cls, edges: list[tuple[int, int]]):
+        gr = PrecedenceGraph()
+        for fr_id, to_id in edges:
+            gr.add_edge(fr_id, to_id)
+        return gr
+
     def clear(self):
         self._edges.clear()
         self._reverse_edges.clear()
+
+    def get_reversed_copy(self):
+        rev_copy = PrecedenceGraph()
+        rev_copy._edges = copy.deepcopy(self._reverse_edges)
+        rev_copy._reverse_edges = copy.deepcopy(self._edges)
+        return rev_copy
 
     def check_edge(self, fr_id: int, to_id: int) -> bool:
         return False if fr_id not in self._edges.keys() or to_id not in self._edges[fr_id] else True
@@ -40,6 +53,9 @@ class PrecedenceGraph:
     def get_copy_of_all_edges(self) -> tt.Dict[int, tt.Set[int]]:
         return copy.deepcopy(self._edges)
 
+    def get_copy_of_all_reversed_edges(self) -> tt.Dict[int, tt.Set[int]]:
+        return copy.deepcopy(self._reverse_edges)
+
     def add_edge(self, fr_id: int, to_id: int) -> None:
         if fr_id not in self._edges.keys():
             self._edges[fr_id] = set()
@@ -47,6 +63,10 @@ class PrecedenceGraph:
         if to_id not in self._reverse_edges.keys():
             self._reverse_edges[to_id] = set()
         self._reverse_edges[to_id].add(fr_id)
+
+    def add_edges_from_list(self, edges: list[tuple[int, int]]) -> None:
+        for fr_id, to_id in edges:
+            self.add_edge(fr_id, to_id)
 
     def remove_edge(self, fr_id: int, to_id: int) -> None:
         if self.check_edge(fr_id, to_id):

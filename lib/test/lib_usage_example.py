@@ -1,6 +1,7 @@
 import copy
 import itertools
 import math
+import random
 
 import numpy as np
 from tqdm import tqdm
@@ -57,6 +58,25 @@ class SingleMachine:
         names = copy.deepcopy(jobs_half_lengths)
         buffers = dict()
         ds = [DiscreteDistribution.set_uniform(-hl, hl) for hl in jobs_half_lengths]
+        return cls(names, buffers, ds)
+
+    @classmethod
+    def with_norm_distributions(cls, jobs_half_lengths: list[int], es: list[float], ds: list[float]):
+        if len(jobs_half_lengths) != len(es) or len(jobs_half_lengths) != len(ds):
+            raise ValueError("jobs_half_lengths, es, and ds must have the same length")
+        names = copy.deepcopy(jobs_half_lengths)
+        buffers = dict()
+        ds = [DiscreteDistribution.set_norm_approx(-jobs_half_lengths[i],
+                                                   jobs_half_lengths[i],
+                                                   e=es[i],
+                                                   d=ds[i]) for i in range(len(jobs_half_lengths))]
+        return cls(names, buffers, ds)
+
+    @classmethod
+    def with_exp_distributions(cls, jobs_half_lengths: list[int]):
+        names = copy.deepcopy(jobs_half_lengths)
+        buffers = dict()
+        ds = [DiscreteDistribution.set_exp_approx(-hl, hl, lamb=1/hl) for hl in jobs_half_lengths]
         return cls(names, buffers, ds)
 
     @classmethod
@@ -167,8 +187,8 @@ def exp_last_ovp_e(n: int, k: int):
 
 
 def single_machine_permutator(sm: SingleMachine):
+    new_sm = copy.deepcopy(sm)  # or deepcopy() if needed
     for perm in itertools.permutations(list(range(sm.num_jobs))):
-        new_sm = copy.deepcopy(sm)  # or deepcopy() if needed
         new_sm.permutate(list(perm))
         yield new_sm
 
@@ -182,10 +202,7 @@ def optimizator(sm: SingleMachine):
     print("n! = ", math.factorial(n))
     last_e = 0
     for sm_perm in tqdm(single_machine_permutator(sm)):
-        ####
-        # bft_place_optimizer(sm_perm)
-        ####
-        sum_e = sum([d.e() for d in sm_perm.calculate_ovp_distributions()[:-1]])
+        sum_e = sum([d.e() for d in sm_perm.calculate_ovp_distributions()])
         last_e = sm_perm.calculate_ovp_distributions()[-1].e()
         if sum_e < min_sum:
             min_sum = sum_e
@@ -268,12 +285,57 @@ def sev_machines_exp():
     print(message_last)
 
 
+def article_experiments(n_exp: int = 5, n_jobs: int = 10):
+    hls = np.random.randint(1, 10, n_exp * n_jobs)
+    hls = np.sort(hls.reshape(n_exp, n_jobs), axis=1)
+    ds = np.random.random(n_exp * n_jobs) * 3
+    ds = np.sort(ds.reshape(n_exp, n_jobs), axis=1)
+    for exp_i in range(n_exp):
+        print(f'exp_i: {exp_i} / {n_exp}')
+        hl = hls[exp_i]
+        sm_unif = SingleMachine.with_uniform_distributions(hl)
+        d = ds[exp_i]
+        sm_norm = SingleMachine.with_norm_distributions([10 for _ in range(n_jobs)],
+                                                   [0. for _ in range(n_jobs)],
+                                                   d)
+        sm_exp = SingleMachine.with_exp_distributions(hl)
+        distrs = [sm.calculate_ovp_distributions() for sm in [sm_unif, sm_norm, sm_exp]]
+        f_sums = [sum([(d.e()) for d in ds]) for ds in distrs]
+        f_sum_opts = [optimizator(sm)[0] for sm in [sm_unif, sm_norm, sm_exp]]
+        for sm_id in range(len(f_sums)):
+            if not math.isclose(f_sums[sm_id], f_sum_opts[sm_id], rel_tol=1e-9):
+                print(d, sm_id, f_sums[sm_id], f_sum_opts[sm_id])
+
+
 if __name__ == "__main__":
+    # article_experiments(10, 8)
+    v = np.array([-1, 0, 1])
+    n_jobs = 4
+    probs = [np.array([0.5 - x/(2 * n_jobs), 0.5, x/(2 * n_jobs)]) for x in range(n_jobs)]
+    ds = [DiscreteDistribution(values=v, probs=p) for p in probs]
+    sm = SingleMachine(names=[d.e() for d in ds], buffers={}, ds=ds)
+    print("x = ", [x/(2 * n_jobs) for x in range(n_jobs)])
+    print("names = ", sm.names)
+    print("ds = ", sm.calculate_ovp_distributions())
+    print("es = ", [d.e() for d in sm.calculate_ovp_distributions()])
+    print("sum = ", sum([d.e() for d in sm.calculate_ovp_distributions()]))
+    print(optimizator(sm)[0])
+    # sm = SingleMachine.with_uniform_distributions([1, 5, 1, 5, 1, 5, 1])
+    # print([round(float(d.e()), 2) for d in sm.calculate_ovp_distributions()])
+    # print(sum([float(d.e()) for d in sm.calculate_ovp_distributions()]))
+    # for i in range(sm.num_jobs):
+    #     print("Put bft after", i)
+    #     sm.add_bft(i, 1)
+    #     print([round(float(d.e()), 2) for d in sm.calculate_ovp_distributions()])
+    #     print(sum([float(d.e()) for d in sm.calculate_ovp_distributions()]))
+    #     sm.add_bft(i, -1)
+    #
+
     # sev_machines_exp()
 
-    sm = SingleMachine.with_trimodal_symmetric([0.1, 0.1, 0.1, 0.1])
-    print(sm.calculate_ovp_distributions())
-    print([float(x[0]) for x in sm.calculate_ovp_distributions()])
+    # sm = SingleMachine.with_trimodal_symmetric([0.1, 0.1, 0.1, 0.1])
+    # print(sm.calculate_ovp_distributions())
+    # print([float(x[0]) for x in sm.calculate_ovp_distributions()])
 
     # sm = SingleMachine.with_uniform_distributions([1, 2, 1])
     # print(sm.names)
