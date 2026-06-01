@@ -220,4 +220,3 @@ class PrecedenceGraph:
                     f'start ids: {self.get_start_ids()}\n' +
                     f'edges: {self._edges}')
         return to_print
-

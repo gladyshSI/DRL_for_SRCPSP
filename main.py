@@ -67,6 +67,5 @@ import multiprocessing as mp
 # lx: [0, 0.25, 0.25, 0.475], r1x: [0, 0, 0.475, 0.475], r2x: [0.25, 0.25, 0.25, 0.25]
 # SUCCESS: 0.734375 0.724375 0.73046875
 
-values = np.array(range(-1, 3 + 1))
-probs = np.exp(-(values - 1)**2 / 2.)
-print(values, probs)
+print("ЗАДАЧА ПЛАНИРОВАНИЯ НА ОДНОЙ МАШИНЕ С НЕОПРЕДЕЛЕННЫМИ ПРОДОЛЖИТЕЛЬНОСТЯМИ РАБОТ И КОРРЕКТИРУЮЩИМ АЛГОРИТМОМ <<СДВИГ ВПРАВО>>".lower())
+print("STOCHASTIC SINGLE-MACHINE SCHEDULING PROBLEM WITH UNCERTAIN PROCESSING TIMES AND A RIGHT-SHIFT CORRECTION ALGORITHM".lower())

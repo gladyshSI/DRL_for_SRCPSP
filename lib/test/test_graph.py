@@ -2,6 +2,7 @@ from collections import defaultdict
 from unittest import TestCase
 
 from lib.graph import PrecedenceGraph
+from lib.graph import get_subgraph
 
 
 def make_g() -> PrecedenceGraph:

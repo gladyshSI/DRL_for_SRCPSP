@@ -7,7 +7,7 @@ from lib.distribution import DiscreteDistribution
 from lib.graph import PrecedenceGraph
 from lib.job import Job
 from lib.problem import Problem
-from lib.schedule import Schedule
+from lib.schedule import Schedule, sensitivity_test, get_exact_left_shift_overlap_distributions
 
 
 class TestSchedule(TestCase):
@@ -227,3 +227,55 @@ class TestSchedule(TestCase):
         # print("ovps = ",
         #       {i: {int(v): float(p.round(3)) for v, p in zip(val.values, val.probs)} for i, val in ovps.items()})
         self.assertEqual(overlaps, {i: {int(v): float(p.round(2)) for v, p in zip(val.values, val.probs)} for i, val in ovps.items()})
+
+    def test_sensitivity_test(self):
+        self.schedule.schedule_job(worker_id=0, job_id=0, start_time=0)
+        self.schedule.schedule_job(worker_id=0, job_id=1, start_time=3)
+        self.schedule.schedule_job(worker_id=1, job_id=2, start_time=0)
+        self.schedule.schedule_job(worker_id=1, job_id=3, start_time=3)
+        self.schedule.schedule_job(worker_id=1, job_id=4, start_time=6)
+
+        self.assertEqual([0., 1., 0., 0., 1., 0.], sensitivity_test(self.schedule, 1, 1.))
+        self.assertEqual([0., -1., 0., 0., 0., 0.], sensitivity_test(self.schedule, 1, -1.))
+        self.assertEqual([0., 0., 0., 1., 1., 0.], sensitivity_test(self.schedule, 3, 1.))
+        self.assertEqual([-1., 0., -1., -1., 0., 0.], sensitivity_test(self.schedule, 3, -1.))
+        self.assertEqual([0., 4.5, 0., 0., 4.5, 0.], sensitivity_test(self.schedule, 1, 4.5))
+        self.assertEqual([-1.5, -4.5, 0., 0., 0., 0.], sensitivity_test(self.schedule, 1, -4.5))
+
+    def test_get_exact_left_shift_overlap_distributions(self):
+        self.schedule.schedule_job(worker_id=0, job_id=0)
+        self.schedule.schedule_job(worker_id=0, job_id=2)
+        self.schedule.schedule_job(worker_id=0, job_id=1)
+        self.schedule.schedule_job(worker_id=1, job_id=3)
+        overlaps = {
+            0: {0: round(10. / 27, 8), 1: round(14. / 27, 8), 2: round(3. / 27, 8)},
+            1: {0: 1.},
+            2: {0: round(2. / 3, 8), 1: round(1. / 3, 8)},
+            3: {0: 1.}
+        }
+        print("Check partial schedule:")
+        ovps = get_exact_left_shift_overlap_distributions(self.schedule)
+        print("ovps = ", {i: {int(v): float(p.round(8)) for v, p in zip(val.values, val.probs)} for i, val in ovps.items()})
+        self.assertEqual(overlaps,
+                         {i: {int(v): float(p.round(8)) for v, p in zip(val.values, val.probs)} for i, val in
+                          ovps.items()})
+
+        self.schedule.schedule_job(worker_id=1, job_id=4)
+        self.schedule.schedule_job(worker_id=0, job_id=5)
+        overlaps = {
+            0: {0: round(26. / 81, 8), 1: round(40. / 81, 8), 2: round(12. / 81, 8), 3: round(3. / 81, 8)},
+            1: {0: round(2. / 3, 8), 1: round(1. / 3, 8)},
+            2: {0: round(5. / 9, 8), 1: round(3. / 9, 8), 2: round(1. / 9, 8)},
+            3: {0: 1.},
+            4: {0: 1.},
+            5: {0: 1.}
+        }
+        t1 = time.time()
+        print("Check full schedule:")
+        ovps = get_exact_left_shift_overlap_distributions(self.schedule)
+        t2 = time.time()
+        print(t2 - t1)
+        print("ovps = ", {i: {int(v): float(p.round(8)) for v, p in zip(val.values, val.probs)} for i, val in ovps.items()})
+        self.assertEqual(overlaps,
+                         {i: {int(v): float(p.round(8)) for v, p in zip(val.values, val.probs)} for i, val in
+                          ovps.items()})

@@ -209,22 +209,23 @@ class Schedule:
     def topological_sort(self, reverse: bool = False) -> tt.List[int]:
         graph = self._problem.graph
         start_nodes = graph.get_start_ids()
+        working_subset_of_jobs = self._scheduled
         edges = self._edges
         reverse_edges = self._reverse_edges
 
-        order = list(start_nodes.intersection(self._scheduled))
+        order = list(start_nodes.intersection(working_subset_of_jobs))
         considered = start_nodes
         candidates = set()
         for i in order:
-            candidates = candidates.union(set(edges[i].keys()).intersection(self._scheduled))
+            candidates = candidates.union(set(edges[i].keys()).intersection(working_subset_of_jobs))
         while candidates:
             for c in candidates:
-                if set(reverse_edges[c].keys()) <= considered:
+                if set(reverse_edges[c].keys() & working_subset_of_jobs) <= considered:
                     order.append(c)
                     considered.add(c)
                     candidates.remove(c)
                     new_candidates = set() if c not in edges.keys() else set(edges[c].keys())
-                    candidates = candidates.union(new_candidates.intersection(self._scheduled))
+                    candidates = candidates.union(new_candidates.intersection(working_subset_of_jobs))
                     break
         return order if not reverse else list(reversed(order))
 
@@ -399,3 +400,87 @@ def draw_schedule(schedule: Schedule, colors=None) -> None:
         height=400 + 30 * df["Resource"].nunique()
     )
     fig.show()
+
+
+def sch_top_sort_from_st_id(sch: Schedule, start_id: int, reverse: bool = False) -> tt.List[int]:
+    edges = sch._reverse_edges if reverse else sch._edges
+    scheduled = sch.get_scheduled()
+
+    if start_id not in edges:
+        return [start_id]
+
+    order = []
+    visited = set()
+    stack = [(start_id, False)]  # (node, processed)
+
+    while stack:
+        v, processed = stack.pop()
+        if processed:
+            order.append(v)
+            continue
+        if v in visited:
+            continue
+        visited.add(v)
+        stack.append((v, True))  # push again to append after children
+        for next_v in edges.get(v, {}):
+            if next_v not in visited and next_v in scheduled:
+                stack.append((next_v, False))
+
+    return order[::-1]
+
+
+def sensitivity_test(sch: Schedule, job_id: int, shift: float) -> list[float]:
+    """
+    Move the subset of the scheduled jobs to right (shift > 0) or left (shift < 0) and return the list of all start_time deviations.
+    If job has not been scheduled, its deviation is always 0
+
+    :param sch:
+    :param job_id:
+    :param shift:
+    :return:
+    """
+    deviations = [0. for _ in range(sch.get_problem().n_jobs)]
+    if job_id not in sch.get_scheduled() or shift == 0.:
+        return deviations
+    if job_id >= len(deviations):
+        raise ValueError(f"Job {job_id} greater than the number of jobs")
+    deviations[job_id] = shift
+    reverse = False if shift > 0. else True
+    alpha = -1 if reverse else 0
+    rev_edges = sch._edges if reverse else sch._reverse_edges
+    order = sch_top_sort_from_st_id(sch, job_id, reverse)
+
+    for i, j_id in enumerate(order[1:]):
+        ids_to_check = set(order[:i+1]) & set(rev_edges.get(j_id, {}))
+        pushes = [0.] + [deviations[id] - alpha * rev_edges[j_id][id] for id in ids_to_check]
+        dev = max(pushes) if not reverse else min(pushes)
+        deviations[j_id] = dev
+    return deviations
+
+
+def get_exact_left_shift_overlap_distributions(sch: Schedule, error_value: float = 1e-6) -> tt.Dict[int, Distribution]:
+    """
+    We fix the completion times of the last scheduled jobs, and if its duration increase,
+    we move predecessors to the left.
+
+    :return:
+    """
+    start_times_distribution_norm = dict()  # task_id -> Distribution
+    overlap_distributions = dict()  # task_id -> Distribution
+    problem = sch.get_problem()
+    scheduled = sch.get_scheduled()
+    zero_dist = DiscreteDistribution(values=np.array([0]), probs=np.array([1.]))
+    order = sch.topological_sort(reverse=True)
+    for j in order:
+        dur = problem.jobs[j].get_duration()
+        successors_dict = {k: v for k, v in sch._edges.get(j, {}).items() if k in scheduled}
+        suc_delta_distributions = [zero_dist]
+        for suc, time_lag in successors_dict.items():
+            delta_dist = start_times_distribution_norm[suc].shift(-time_lag)
+            suc_delta_distributions.append(delta_dist)
+        overlap_distributions[j] = max_of_discr_distributions(suc_delta_distributions)
+        overlap_distributions[j].normalize(epsilon=error_value)
+
+        duration_distribution_norm = sch._problem.jobs[j].get_distribution().shift(-dur)
+        start_times_distribution_norm[j] = overlap_distributions[j].max_with(zero_dist) + duration_distribution_norm
+    return overlap_distributions

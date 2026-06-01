@@ -4,6 +4,7 @@ import random
 import numpy as np
 import torch
 import matplotlib
+
 matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
 from torch_geometric.config_store import Model
@@ -76,7 +77,6 @@ def part_sch_to_data(part_sch: Schedule) -> Data:
             possible_edges_from_ids.append(fr_id)
             possible_edges_to_ids.append(to_ids)
 
-
     w_id_to_last_ct_distribution = dict()
     # Vertex attributes:
     v_attributes = []
@@ -107,7 +107,8 @@ def part_sch_to_data(part_sch: Schedule) -> Data:
     for w_id in range(problem.n_workers):
         last_ct_distribution = w_id_to_last_ct_distribution[w_id] if w_id in w_id_to_last_ct_distribution.keys() \
             else DiscreteDistribution(np.array([0]), np.array([1.]))
-        v_i_attr = [0, 1, 0, w_id + 1, 0, 0, 0, last_ct_distribution.min_v(), last_ct_distribution.max_v(), last_ct_distribution.e()]
+        v_i_attr = [0, 1, 0, w_id + 1, 0, 0, 0, last_ct_distribution.min_v(), last_ct_distribution.max_v(),
+                    last_ct_distribution.e()]
         v_attributes.append(v_i_attr)
 
     total_fr_ids = precedence_fr_ids + execution_order_fr_ids + precedence_to_ids + execution_order_to_ids
@@ -136,7 +137,6 @@ def get_j_id_node_id_relationship(part_sch: Schedule):
     for seq in part_sch.get_execution_orders():
         if len(seq) > 0:
             last_executed.add(seq[-1])
-
 
     j_id_to_gnn_node_id = dict()
     gnn_node_id_to_j_id = dict()
@@ -242,7 +242,8 @@ def partial_sch_to_cropped_data(part_sch: Schedule) -> Data:
             rel_l_longest_path = left_longest_paths[j_id] / the_longest_path
             rel_r_longest_path = right_longest_paths[j_id] / the_longest_path
 
-        v_i_attr = [last_performed, candidate, min_dur, max_dur, e_dur, min_ct, max_ct, e_ct, rel_l_longest_path, rel_r_longest_path]
+        v_i_attr = [last_performed, candidate, min_dur, max_dur, e_dur, min_ct, max_ct, e_ct, rel_l_longest_path,
+                    rel_r_longest_path]
         v_attributes.append(v_i_attr)
 
     total_fr_ids = precedence_fr_ids + precedence_to_ids
@@ -507,7 +508,8 @@ def solve_problem_with_nn(model, problem: Problem, map_location: str = 'cpu', mo
     return sch
 
 
-def solve_problem_with_cropped_nn(model, problem: Problem, part_sch_to_data_f, map_location: str = 'cpu', mode: str = 'greedy') -> Schedule:
+def solve_problem_with_cropped_nn(model, problem: Problem, part_sch_to_data_f, map_location: str = 'cpu',
+                                  mode: str = 'greedy') -> Schedule:
     sch = Schedule(problem=problem)
     sch.schedule_job(worker_id=0, job_id=0)
     while len(sch.get_candidates()) > 0:
@@ -570,16 +572,15 @@ def load_model_from_checkpoint(checkpoint_path: str, map_location: str = 'cpu'):
 
 def one_problem_try():
     # df = make_df_from_all_csv_files('../data/occidata/outputs')
-    df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
-    # df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
-    include = {'distribution': ['uniform'], 'name': ['BBr'], 'jobs_num': [122]}
+    # df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
+    df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
+    include = {'distribution': ['uniform'], 'name': ['BBr'], 'jobs_num': [402]}
     df_filtered = filter_dataframe(df, include=include, exclude={}).drop_duplicates(subset=['name', 'jobs_f'])
     graph_f, jobs_f, n_workers, sch_str = df_filtered.iloc[1][["graph_f", "jobs_f", "workers_num", "schedule"]]
 
     jobs = read_jobs(occidata_jobs_file_path_to_ours(jobs_f))
     graph = read_graph_from_txt(occidata_graph_file_path_to_ours(graph_f))
     problem = Problem(n_workers=n_workers, n_jobs=len(jobs), graph=graph, jobs=jobs)
-
 
     sch = Schedule(problem=problem)
     make_schedule_from_str(sch, sch_str)
@@ -592,18 +593,21 @@ def one_problem_try():
 
     # part_sch_to_data_f = partial_sch_to_cropped_data
     part_sch_to_data_f = partial_sch_to_cropped_data_with_com_node
-    sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='greedy')
+    sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
+                                        mode='greedy')
     print("greedy", get_metrics(sch))
     draw_schedule(sch)
-    sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='hungarian')
-    print("hungarian", get_metrics(sch))
-    draw_schedule(sch)
-    sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='random')
-    print("random", get_metrics(sch))
-    draw_schedule(sch)
-    sch = rand_sgs_best_of_k(problem, k=20)
-    print("rand sgs best of 20", get_metrics(sch))
-    draw_schedule(sch)
+    # sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
+    #                                     mode='hungarian')
+    # print("hungarian", get_metrics(sch))
+    # draw_schedule(sch)
+    # sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
+    #                                     mode='random')
+    # print("random", get_metrics(sch))
+    # draw_schedule(sch)
+    # sch = rand_sgs_best_of_k(problem, k=20)
+    # print("rand sgs best of 20", get_metrics(sch))
+    # draw_schedule(sch)
 
 
 def main():
@@ -645,7 +649,8 @@ def main():
     # part_sch_to_data_f = partial_sch_to_cropped_data
     part_sch_to_data_f = partial_sch_to_cropped_data_with_com_node
     for jobs_f, problem in tqdm(jobs_f_to_problem.items()):
-        sch_greedy = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='greedy')
+        sch_greedy = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
+                                                   mode='greedy')
         jobs_f_name_to_sch[jobs_f]["NN_greedy"] = sch_greedy
         # sch_hungarian = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='hungarian')
         # jobs_f_name_to_sch[jobs_f]["NN_hungarian"] = sch_hungarian
@@ -677,7 +682,8 @@ def main():
     draw_box_plots(name_to_metrics, 'max_obj', labelsize=20, fontsize=11)
 
 
-def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str, labelsize: int=20, fontsize: int=20, ):
+def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str, labelsize: int = 20,
+                   fontsize: int = 20, ):
     # model_name -> metric name -> [metric values]
     names = list(name_to_metric.keys())
     print('names', names)
@@ -688,18 +694,19 @@ def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str,
                                     for i in range(instances_num)]
     print('len min metric', len(min_metric_for_each_instance))
 
-    delta_with_min = [[name_to_metric[model_name][metric_name][i] - min_metric_for_each_instance[i] for i in range(instances_num)]
-                      for model_name in names]
+    delta_with_min = [
+        [name_to_metric[model_name][metric_name][i] - min_metric_for_each_instance[i] for i in range(instances_num)]
+        for model_name in names]
     fig, ax = plt.subplots()
     # ax.set_ylabel(f'{metric_name} (Δ with min.)', fontsize=fontsize//2)
     ax.tick_params(axis='both', which='major', labelsize=labelsize)
-    ax.boxplot(delta_with_min,  tick_labels=names)
+    ax.boxplot(delta_with_min, tick_labels=names)
     ax.set_title(f'{metric_name} (Δ with min.)', fontsize=fontsize)
 
     plt.show()
 
 
 if __name__ == '__main__':
-    main()
-    # one_problem_try()
+    # main()
+    one_problem_try()
     # one_problem_try(mode="links_values")

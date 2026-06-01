@@ -5,7 +5,7 @@ import numpy as np
 from lib.distribution import DiscreteDistribution
 from lib.graph import PrecedenceGraph
 from lib.job import Job
-from lib.problem import Problem, get_longest_paths
+from lib.problem import Problem, get_longest_paths, get_sub_problem
 
 
 class Test(TestCase):
@@ -46,4 +46,3 @@ class Test(TestCase):
         self.assertEqual(self.problem.jobs, rev_problem.jobs)
         self.assertEqual(self.problem.graph.get_copy_of_all_edges(), rev_problem.graph.get_copy_of_all_reversed_edges())
         self.assertEqual(self.problem.graph.get_copy_of_all_reversed_edges(), rev_problem.graph.get_copy_of_all_edges())
-

@@ -57,4 +57,3 @@ def get_longest_paths(problem: Problem, reverse: bool = False) -> dict[int, int]
         longest_paths[j] = new_value
 
     return longest_paths
-
