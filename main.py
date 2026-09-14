@@ -67,5 +67,4 @@ import multiprocessing as mp
 # lx: [0, 0.25, 0.25, 0.475], r1x: [0, 0, 0.475, 0.475], r2x: [0.25, 0.25, 0.25, 0.25]
 # SUCCESS: 0.734375 0.724375 0.73046875
 
-print("ЗАДАЧА ПЛАНИРОВАНИЯ НА ОДНОЙ МАШИНЕ С НЕОПРЕДЕЛЕННЫМИ ПРОДОЛЖИТЕЛЬНОСТЯМИ РАБОТ И КОРРЕКТИРУЮЩИМ АЛГОРИТМОМ <<СДВИГ ВПРАВО>>".lower())
-print("STOCHASTIC SINGLE-MACHINE SCHEDULING PROBLEM WITH UNCERTAIN PROCESSING TIMES AND A RIGHT-SHIFT CORRECTION ALGORITHM".lower())
+print([a for a in zip([1, 2, 3], [4, 5])])

@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.nn import GATv2Conv
 
-from dataset_generators.data_loader import create_train_val_test_loaders
+from dataset_generators.data_loader import create_train_val_test_loaders, create_train_val_test_loaders_from_sols
 from engines.link_value_train import train_link_value_prediction, validate_link_value_prediction, validate_diagnostics
 from gnn_models.link_value_prediction import SimpleLinkValuePredictor
 
@@ -10,11 +10,15 @@ def predict_links_values_train_test():
     # datasets_dir = '../data/datasets_with_length/'
     # datasets_dir = '../data/occidata/datasets/'
     # datasets_dir = '../data/occidata/datasets_cropped/'
-    datasets_dir = '../data/occidata/datasets_cropped_com_node/'
-    train_loader, val_loader, test_loader = create_train_val_test_loaders(datasets_dir,
-                                                                          (0.8, 0.1, 0.1),
-                                                                          120)
-
+    # datasets_dir = '../data/occidata/datasets_cropped_com_node/'
+    # train_loader, val_loader, test_loader = create_train_val_test_loaders(datasets_dir,
+    #                                                                       (0.8, 0.1, 0.1),
+    #                                                                       120)
+    solutions_dir='../data/occidata/solutions/'
+    train_loader, val_loader, test_loader = create_train_val_test_loaders_from_sols(solutions_dir,
+                                                                                    (0.8, 0.1, 0.1),
+                                                                                    120)
+    print("DONE!")
     it = iter(train_loader)
     batch = next(it)
     in_dim = batch.x.shape[1]

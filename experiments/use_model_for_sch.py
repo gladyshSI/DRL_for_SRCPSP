@@ -1,9 +1,17 @@
 import copy
+import csv
+import os
 import random
+import time
+import json
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import matplotlib
+
+from experiments.postprocessing import cp_multi_mode_buf_postprocessing
 
 matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
@@ -13,7 +21,7 @@ from torch_geometric.nn import GATv2Conv
 from tqdm import tqdm
 from scipy.optimize import linear_sum_assignment
 
-from dataset_generators.cp_problem_solving import rand_sgs, rand_sgs_best_of_k
+from dataset_generators.cp_problem_solving import rand_sgs, rand_sgs_best_of_k, priority_rule
 from dataset_generators.occidata_to_schedule import read_jobs, read_graph_from_txt, make_schedule_from_str, \
     make_df_from_all_csv_files, filter_dataframe, occidata_graph_file_path_to_ours, occidata_jobs_file_path_to_ours
 from gnn_models.link_prediction import SimpleLinkPredictor
@@ -456,11 +464,13 @@ def random_choose_to_schedule(edges_probs: list[tuple[int, int, float, int]]) ->
     return edges_to_schedule
 
 
-def schedule_edges(sch: Schedule, edges_to_sch: list[tuple[int, int, int]], shift: int):
+def schedule_edges(sch: Schedule, edges_to_sch: list[tuple[int, int, int]], shift: int, buffers: bool = True):
     for fr_id, to_id, value in edges_to_sch:
         w_id = fr_id - shift
         w_exec_order = sch.get_execution_orders()[w_id]
         prev_end_t = 0 if len(w_exec_order) == 0 else sch.get_scheduled_end_time(w_exec_order[-1])
+
+        value = value if buffers else 0
         st_time = max(sch.get_first_possible_st_t(worker_id=w_id, job_id=to_id), prev_end_t + value)
         sch.schedule_job(worker_id=w_id, job_id=to_id, start_time=st_time)
 
@@ -509,7 +519,7 @@ def solve_problem_with_nn(model, problem: Problem, map_location: str = 'cpu', mo
 
 
 def solve_problem_with_cropped_nn(model, problem: Problem, part_sch_to_data_f, map_location: str = 'cpu',
-                                  mode: str = 'greedy') -> Schedule:
+                                  mode: str = 'greedy', buffers: bool = True) -> Schedule:
     sch = Schedule(problem=problem)
     sch.schedule_job(worker_id=0, job_id=0)
     while len(sch.get_candidates()) > 0:
@@ -528,20 +538,20 @@ def solve_problem_with_cropped_nn(model, problem: Problem, part_sch_to_data_f, m
         else:
             raise ValueError("mode must be 'greedy' or 'hungarian' or 'random'")
 
-        best_variant, best_obj = [], float('inf')
+        best_variant, best_obj = [], (float('inf'), float('inf'))
         for edges_to_schedule in variants_of_assignment:
             # transfer to our ids:
             edges_to_schedule_our_ids = [(x[0], gnn_node_id_to_j_id[x[1]], x[2]) for x in edges_to_schedule]
             # try to schedule and get metrics:
             sch_copy = copy.deepcopy(sch)
-            schedule_edges(sch_copy, edges_to_schedule_our_ids, shift=n_not_sch_jobs)
+            schedule_edges(sch_copy, edges_to_schedule_our_ids, shift=n_not_sch_jobs, buffers=True)
             metrics = get_metrics(sch_copy)
-            obj_f = metrics['makespan'] + metrics['sum_obj']
+            obj_f = (metrics['makespan'], metrics['sum_obj'])
             if obj_f < best_obj:
                 best_obj = obj_f
                 best_variant = edges_to_schedule_our_ids
 
-        schedule_edges(sch, best_variant, shift=n_not_sch_jobs)
+        schedule_edges(sch, best_variant, shift=n_not_sch_jobs, buffers=buffers)
     return sch
 
 
@@ -571,15 +581,15 @@ def load_model_from_checkpoint(checkpoint_path: str, map_location: str = 'cpu'):
 
 
 def one_problem_try():
-    # df = make_df_from_all_csv_files('../data/occidata/outputs')
-    # df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
-    df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
+    df = make_df_from_all_csv_files('../data/occidata/outputs_200_400-80')
     include = {'distribution': ['uniform'], 'name': ['BBr'], 'jobs_num': [402]}
     df_filtered = filter_dataframe(df, include=include, exclude={}).drop_duplicates(subset=['name', 'jobs_f'])
     graph_f, jobs_f, n_workers, sch_str = df_filtered.iloc[1][["graph_f", "jobs_f", "workers_num", "schedule"]]
 
-    jobs = read_jobs(occidata_jobs_file_path_to_ours(jobs_f))
-    graph = read_graph_from_txt(occidata_graph_file_path_to_ours(graph_f))
+    graph_path = occidata_graph_file_path_to_ours(graph_f)
+    jobs_path = occidata_jobs_file_path_to_ours(jobs_f)
+    jobs = read_jobs(jobs_path)
+    graph = read_graph_from_txt(graph_path)
     problem = Problem(n_workers=n_workers, n_jobs=len(jobs), graph=graph, jobs=jobs)
 
     sch = Schedule(problem=problem)
@@ -591,12 +601,26 @@ def one_problem_try():
     checkpoint = '../checkpoints/CroppedComNodeLinkValuePredictor.pth'
     best_model = load_model_from_checkpoint(checkpoint)
 
-    # part_sch_to_data_f = partial_sch_to_cropped_data
     part_sch_to_data_f = partial_sch_to_cropped_data_with_com_node
     sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
                                         mode='greedy')
     print("greedy", get_metrics(sch))
     draw_schedule(sch)
+
+    part_sch_to_data_f = partial_sch_to_cropped_data_with_com_node
+    sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
+                                        mode='greedy', buffers=False)
+    print("greedy_no_buf", get_metrics(sch))
+    draw_schedule(sch)
+
+    sch = priority_rule(problem, job_to_priority=lambda j_id: problem.jobs[j_id].get_duration())
+    print("SPT", get_metrics(sch))
+    draw_schedule(sch)
+
+    sch = priority_rule(problem, job_to_priority=lambda j_id: -problem.jobs[j_id].get_duration())
+    print("LPT", get_metrics(sch))
+    draw_schedule(sch)
+
     # sch = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
     #                                     mode='hungarian')
     # print("hungarian", get_metrics(sch))
@@ -615,71 +639,238 @@ def main():
     checkpoint = '../checkpoints/CroppedComNodeLinkValuePredictor.pth'
     best_model = load_model_from_checkpoint(checkpoint)
 
+    # Create file with the results
+    fieldnames = ['name', 'jobs_f', 'jobs_num', 'workers_num', 'time_limit',
+                  'schedule', 'gap', 'time', 'makespan', 'avg_delta',
+                  'max_delta']
+    exp_journal = '../data/experiments/journal.csv'
+    # Clean file:
+    with open(exp_journal, 'w', newline='') as of:
+        writer = csv.DictWriter(of, fieldnames=fieldnames, delimiter=';')
+        writer.writeheader()
+
     print("COLLECT CP SOLUTIONS")
-    # df = make_df_from_all_csv_files('../data/occidata/outputs')
-    df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
-    # df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
-    include = {'distribution': ['uniform'], 'name': ['DET', 'STs2', 'BBr'], 'jobs_num': [62]}
-    df_filtered = filter_dataframe(df, include=include, exclude={}).drop_duplicates(subset=['name', 'jobs_f'])
+    sources = [
+        ('../data/occidata/outputs_from400', [62, 122]),
+        ('../data/occidata/outputs_200_400-80', [202, 402]),
+    ]
+
+    dfs = []
+    for path, job_nums in sources:
+        df = make_df_from_all_csv_files(path)
+        for n in job_nums:
+            include = {'distribution': ['uniform'], 'name': ['DET', 'STs2', 'BBr'], 'jobs_num': [n]}
+            dfs.append(filter_dataframe(df, include=include, exclude={}).drop_duplicates(subset=['name', 'jobs_f', 'time_limit']))
+
+    df_filtered = pd.concat(dfs, ignore_index=True)
     print(df_filtered)
+
     print("ITERATE THROUGH CP SOLUTIONS, LOAD SCHEDULES")
     jobs_f_to_problem = dict()
     jobs_f_name_to_sch = dict()
-    for name, graph_f, jobs_f, n_workers, sch_str in tqdm(zip(df_filtered['name'],
-                                                              df_filtered['graph_f'],
-                                                              df_filtered['jobs_f'],
-                                                              df_filtered['workers_num'],
-                                                              df_filtered['schedule'])):
-        if jobs_f not in jobs_f_to_problem.keys():
-            graph_path = occidata_graph_file_path_to_ours(graph_f)
-            jobs_path = occidata_jobs_file_path_to_ours(jobs_f)
-            jobs = read_jobs(jobs_path)
-            graph = read_graph_from_txt(graph_path)
-            problem = Problem(n_workers=n_workers, n_jobs=len(jobs), graph=graph, jobs=jobs)
-            jobs_f_to_problem[jobs_f] = problem
-        problem = jobs_f_to_problem[jobs_f]
-        sch = Schedule(problem=problem)
-        make_schedule_from_str(sch, sch_str)
+    with open(exp_journal, 'a', newline='') as of:
+        writer = csv.DictWriter(of, fieldnames=fieldnames, delimiter=';')
+        for _, row in tqdm(df_filtered.iterrows()):
+            if row.jobs_f not in jobs_f_to_problem.keys():
+                graph_path = occidata_graph_file_path_to_ours(row.graph_f)
+                jobs_path = occidata_jobs_file_path_to_ours(row.jobs_f)
+                jobs = read_jobs(jobs_path)
+                graph = read_graph_from_txt(graph_path)
+                problem = Problem(n_workers=row.workers_num, n_jobs=len(jobs), graph=graph, jobs=jobs)
+                jobs_f_to_problem[row.jobs_f] = problem
+            problem = jobs_f_to_problem[row.jobs_f]
+            sch = Schedule(problem=problem)
+            make_schedule_from_str(sch, row.schedule)
 
-        if jobs_f not in jobs_f_name_to_sch.keys():
-            jobs_f_name_to_sch[jobs_f] = dict()
-        jobs_f_name_to_sch[jobs_f][name] = sch
+            writer.writerow({
+                'name': row['name'],
+                'jobs_f': row['jobs_f'],
+                'jobs_num': row['jobs_num'],
+                'workers_num': row['workers_num'],
+                'time_limit': row['time_limit'],
+                'schedule': row['schedule'],
+                'gap': row['gap'],
+                'time': row['time'],
+                'makespan': row['makespan'],
+                'avg_delta': row['avg_delta'],
+                'max_delta': row['max_delta']
+            })
 
     print("ITERATE THROUGH PROBLEMS AND SOLVE THEM WITH MODEL:")
-    # part_sch_to_data_f = partial_sch_to_cropped_data
-    part_sch_to_data_f = partial_sch_to_cropped_data_with_com_node
-    for jobs_f, problem in tqdm(jobs_f_to_problem.items()):
-        sch_greedy = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location,
-                                                   mode='greedy')
-        jobs_f_name_to_sch[jobs_f]["NN_greedy"] = sch_greedy
-        # sch_hungarian = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='hungarian')
-        # jobs_f_name_to_sch[jobs_f]["NN_hungarian"] = sch_hungarian
-        # sch_nn_random = solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f, map_location=map_location, mode='random')
-        # jobs_f_name_to_sch[jobs_f]["NN_random"] = sch_nn_random
-        # sch_sgs_random = rand_sgs_best_of_k(problem, k=20)
-        # jobs_f_name_to_sch[jobs_f]["SGS_rand"] = sch_sgs_random
+    def save_sch(writer, name, jobs_f, problem, sch, t):
+        dist = sch.calculate_exact_overlap_distributions()
+        writer.writerow({
+            'name': name,
+            'jobs_f': jobs_f,
+            'jobs_num': problem.n_jobs,
+            'workers_num': problem.n_workers,
+            'time_limit': None,
+            'schedule': sch,
+            'gap': None,
+            'time': t,
+            'makespan': sch.get_makespan(),
+            'avg_delta': calculate_agg_f_ovp_dist_e(sum, dist) / problem.n_jobs,
+            'max_delta': calculate_agg_f_ovp_dist_e(max, dist)
+        })
 
-    print("COLLECT ALL METRICS:")
-    name_to_metrics = dict()  # name -> metric -> list[values]
+    with open(exp_journal, 'a', newline='') as of:
+        writer = csv.DictWriter(of, fieldnames=fieldnames, delimiter=';')
+        part_sch_to_data_f = partial_sch_to_cropped_data_with_com_node
+
+        for jobs_f, problem in tqdm(jobs_f_to_problem.items()):
+            solvers = [
+                # ('NN_greedy', lambda: solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f,
+                #                                                     map_location=map_location, mode='greedy')),
+                ('NN_hungarian', lambda: solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f,
+                                                                       map_location=map_location, mode='hungarian')),
+                # ('NN_random', lambda: solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f,
+                #                                                     map_location=map_location, mode='random')),
+                # ('SGS_rand', lambda: rand_sgs_best_of_k(problem, k=10)),
+                # ('NN_hungarian_no_buf', lambda: solve_problem_with_cropped_nn(best_model, problem, part_sch_to_data_f,
+                #                                                               map_location=map_location, mode='hungarian',
+                #                                                                 buffers=False)),
+                # ('SEPT', lambda: priority_rule(problem, job_to_priority=lambda j_id: problem.jobs[j_id].get_duration())),
+                # ('LEPT', lambda: priority_rule(problem, job_to_priority=lambda j_id: -problem.jobs[j_id].get_duration())),
+                # ('SafeFirst', lambda: priority_rule(problem, job_to_priority=lambda j_id: problem.jobs[j_id].get_distribution().d())),
+            ]
+
+
+            for name, solver_fn in solvers:
+                t0 = time.time()
+                sch = solver_fn()
+                t = time.time() - t0
+                save_sch(writer, name, jobs_f, problem, sch, t)
+                if jobs_f not in jobs_f_name_to_sch.keys():
+                    jobs_f_name_to_sch[jobs_f] = dict()
+                jobs_f_name_to_sch[jobs_f][name] = sch
+
+    print("SAVE SOLUTIONS FOR POSTPROCESSING:")
+    keys_to_save = ['NN_hungarian']
+    save_dir = '../data/occidata/sol_best_gnn_model/'
+    id = -1
     for jobs_f, name_to_sch in tqdm(jobs_f_name_to_sch.items()):
+        id += 1
         for name, sch in name_to_sch.items():
-            metrics = get_metrics(sch)
+            if name not in keys_to_save:
+                continue
+            output_file = save_dir+str(sch.get_problem().n_jobs)+"_"+str(id)+"_"+name+"_no_post_pr.csv"
+            sch.save_to_file(output_file)
 
-            if name not in name_to_metrics.keys():
-                name_to_metrics[name] = dict()
 
-            for metric_name, metric_val in metrics.items():
-                if metric_name not in name_to_metrics[name].keys():
-                    name_to_metrics[name][metric_name] = []
-                name_to_metrics[name][metric_name].append(metric_val)
+    #
+    # # print("COLLECT ALL METRICS:")
+    # # name_to_metrics = dict()  # name -> metric -> list[values]
+    # # for jobs_f, name_to_sch in tqdm(jobs_f_name_to_sch.items()):
+    # #     for name, sch in name_to_sch.items():
+    # #         metrics = get_metrics(sch)
+    # #
+    # #         if name not in name_to_metrics.keys():
+    # #             name_to_metrics[name] = dict()
+    # #
+    # #         for metric_name, metric_val in metrics.items():
+    # #             if metric_name not in name_to_metrics[name].keys():
+    # #                 name_to_metrics[name][metric_name] = []
+    # #             name_to_metrics[name][metric_name].append(metric_val)
+    # #
+    # # print("PRINT METRIC AVERAGES:")
+    # # for name, metrics in name_to_metrics.items():
+    # #     for metric_name, metric_vals in metrics.items():
+    # #         print(f'{name}: {metric_name}: avg = {np.mean(metric_vals)}, std = {np.std(metric_vals)}')
+    # # draw_box_plots(name_to_metrics, 'makespan', labelsize=20, fontsize=11)
+    # # draw_box_plots(name_to_metrics, 'sum_obj', labelsize=20, fontsize=11)
+    # # draw_box_plots(name_to_metrics, 'max_obj', labelsize=20, fontsize=11)
 
-    print("PRINT METRIC AVERAGES:")
-    for name, metrics in name_to_metrics.items():
-        for metric_name, metric_vals in metrics.items():
-            print(f'{name}: {metric_name}: avg = {np.mean(metric_vals)}, std = {np.std(metric_vals)}')
-    draw_box_plots(name_to_metrics, 'makespan', labelsize=20, fontsize=11)
-    draw_box_plots(name_to_metrics, 'sum_obj', labelsize=20, fontsize=11)
-    draw_box_plots(name_to_metrics, 'max_obj', labelsize=20, fontsize=11)
+
+def main_postproc():
+    print("READING POSTPROCESSED SOLUTIONS:")
+    pproc_solutions_dir = '../data/occidata/sol_best_gnn_model_pproc/'
+
+    # Only keep actual schedule files: skip metadata sidecars and the manifest.
+    f_names = [
+        f for f in os.listdir(pproc_solutions_dir)
+        if not f.endswith('.meta.json') and f != 'job_manifest.json'
+    ]
+
+    fieldnames = ['name', 'jobs_f', 'jobs_num', 'workers_num', 'time_limit',
+                  'schedule', 'gap', 'time', 'makespan', 'avg_delta',
+                  'max_delta']
+    exp_journal = '../data/experiments/journal.csv'
+    with open(exp_journal, 'a', newline='') as of:
+        writer = csv.DictWriter(of, fieldnames=fieldnames, delimiter=';')
+        for f_name in tqdm(f_names):
+            sch = Schedule.read_from_file(os.path.join(pproc_solutions_dir, f_name))
+            dist = sch.calculate_exact_overlap_distributions()
+            n_jobs = sch.get_problem().n_jobs
+            n_workers = sch.get_problem().n_workers
+
+            # Recover gap/time/time_limit from the sidecar metadata file.
+            stem = Path(f_name).stem
+            meta_path = os.path.join(pproc_solutions_dir, f"{stem}.meta.json")
+            if os.path.isfile(meta_path):
+                with open(meta_path) as mf:
+                    meta = json.load(mf)
+                gap = meta.get("gap")
+                solve_time = meta.get("time")
+                t_l = meta.get("time_limit")
+            else:
+                gap = None
+                solve_time = None
+                t_l = None
+
+            writer.writerow({
+                'name': 'PostPR',
+                'jobs_f': f_name,
+                'jobs_num': n_jobs,
+                'workers_num': n_workers,
+                'time_limit': t_l,
+                'schedule': sch,
+                'gap': gap,
+                'time': solve_time,
+                'makespan': sch.get_makespan(),
+                'avg_delta': calculate_agg_f_ovp_dist_e(sum, dist) / n_jobs,
+                'max_delta': calculate_agg_f_ovp_dist_e(max, dist)
+            })
+
+
+def collect_postprocessed_sol_and_analyse():
+    # Create file with the results
+    fieldnames = ['name', 'jobs_f', 'jobs_num', 'workers_num', 'time_limit',
+                  'schedule', 'gap', 'time', 'makespan', 'avg_delta',
+                  'max_delta']
+    exp_journal = '../data/experiments/journal.csv'
+    # Clean file:
+    with open(exp_journal, 'w', newline='') as of:
+        writer = csv.DictWriter(of, fieldnames=fieldnames, delimiter=';')
+        writer.writeheader()
+
+    pproc_solutions_dir = '../data/occidata/sol_best_gnn_model_pproc/'
+    f_names = [f for f in os.listdir(pproc_solutions_dir)]
+    n_jobs_to_schs = dict()
+
+    print("READING SOLUTIONS:")
+    with open(exp_journal, 'a', newline='') as of:
+        writer = csv.DictWriter(of, fieldnames=fieldnames, delimiter=';')
+        for f_name in tqdm(f_names):
+            sch = Schedule.read_from_file(os.path.join(pproc_solutions_dir, f_name))
+            dist = sch.calculate_exact_overlap_distributions()
+            n_jobs = sch.get_problem().n_jobs
+            n_workers = sch.get_problem().n_workers
+            t_l = 2 * 60 if n_jobs == 62 else 6 * 60 if n_jobs == 402 else 3 * 60
+            writer.writerow({
+                'name': 'PostPR',
+                'jobs_f': f_name,
+                'jobs_num': n_jobs,
+                'workers_num': n_workers,
+                'time_limit': t_l,
+                'schedule': sch,
+                'gap': None,
+                'time': None,
+                'makespan': sch.get_makespan(),
+                'avg_delta': calculate_agg_f_ovp_dist_e(sum, dist) / n_jobs,
+                'max_delta': calculate_agg_f_ovp_dist_e(max, dist)
+            })
+
+
 
 
 def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str, labelsize: int = 20,
@@ -707,6 +898,8 @@ def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str,
 
 
 if __name__ == '__main__':
-    # main()
-    one_problem_try()
+    main()
+    # main_postproc()
+    # collect_postprocessed_sol_and_analyse()
+    # one_problem_try()
     # one_problem_try(mode="links_values")

@@ -65,13 +65,15 @@ def occidata_graph_file_path_to_ours(path_to_file: str) -> str:
     if path_to_file.split('/')[-2] == 'parsedPSPLib':
         intermediate_folder = 'parsedPSPLib/'
     elif path_to_file.split('/')[-3] == 'FasterGeneratedGraphs':
-        intermediate_folder = 'FasterGeneratedGraphs/'
+        intermediate_folder = 'FasterGeneratedGraphs/' + path_to_file.split('/')[-2] + '/'
     else:
         intermediate_folder = 'FasterGeneratedGraphs'
     return '../data/occidata/graphs/' + intermediate_folder + path_to_file.split('/')[-1]
 
 
 def occidata_jobs_file_path_to_ours(path_to_file: str) -> str:
+    if path_to_file.split('/')[-2] == '200-400':
+        return '../data/occidata/tasks/uniform/200-400/' + path_to_file.split('/')[-1]
     return '../data/occidata/tasks/uniform/' + path_to_file.split('/')[-1]
 
 
