@@ -1,3 +1,4 @@
+import math
 from unittest import TestCase
 
 import numpy as np
@@ -7,7 +8,8 @@ from lib.distribution import DiscreteDistribution
 from lib.graph import PrecedenceGraph
 from lib.job import Job
 from lib.problem import Problem
-from lib.schedule import Schedule, sensitivity_test, get_exact_left_shift_overlap_distributions
+from lib.schedule import Schedule, sensitivity_test, get_exact_left_shift_overlap_distributions, \
+    get_max_possible_right_shift
 
 
 class TestSchedule(TestCase):
@@ -227,6 +229,15 @@ class TestSchedule(TestCase):
         # print("ovps = ",
         #       {i: {int(v): float(p.round(3)) for v, p in zip(val.values, val.probs)} for i, val in ovps.items()})
         self.assertEqual(overlaps, {i: {int(v): float(p.round(2)) for v, p in zip(val.values, val.probs)} for i, val in ovps.items()})
+
+    def test_get_max_possible_right_shift(self):
+        self.generate_schedule()
+        self.assertEqual(3, get_max_possible_right_shift(self.schedule, 3))
+        self.assertEqual(0, get_max_possible_right_shift(self.schedule, 1))
+        self.assertEqual(0, get_max_possible_right_shift(self.schedule, 4))
+        self.assertEqual(0, get_max_possible_right_shift(self.schedule, 2))
+        self.assertEqual(math.inf, get_max_possible_right_shift(self.schedule, 5))
+
 
     def test_sensitivity_test(self):
         self.schedule.schedule_job(worker_id=0, job_id=0, start_time=0)

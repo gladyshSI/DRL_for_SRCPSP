@@ -10,6 +10,7 @@ from dataset_generators.data_loader_hetero import create_train_val_test_loaders
 from dataset_generators.solution_to_heterogeneous_data import round_slice_to_node_ids_mapping, \
     round_partial_sch_to_data
 from experiments.exp_hetero_predict_links import infer_metadata_and_in_dims, evaluate
+from experiments.postprocessing import cp_multi_mode_buf_postprocessing
 
 matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
@@ -78,7 +79,8 @@ def get_probs_values_for_edge_type(model, data, map_location='cpu') -> list[tupl
     return result
 
 
-def greedy_choose_to_schedule(edges_probs: list[tuple[str, int, str, int, float, float]]) -> list[tuple[str, int, str, int, float]]:
+def greedy_choose_to_schedule(edges_probs: list[tuple[str, int, str, int, float, float]]) -> list[
+    tuple[str, int, str, int, float]]:
     edges_to_schedule = []
     # edges_probs = [_ for _ in edges_probs if (_[0] == 'left_dummy') or (_[0] == 'right_dummy' and _[4] >= 0.00)]
     # print([_ for _ in edges_probs if (_[0] == 'right_dummy')])
@@ -89,8 +91,10 @@ def greedy_choose_to_schedule(edges_probs: list[tuple[str, int, str, int, float,
         edges_probs = [t for t in edges_probs if (t[0], t[1]) != (fr_t, fr_id) and (t[2], t[3]) != (to_t, to_id)]
     return edges_to_schedule
 
+
 # TODO: Doesn't work so far
-def hungarian_choose_to_schedule(edges_probs: list[tuple[str, int, str, int, float]]) -> list[tuple[str, int, str, int]]:
+def hungarian_choose_to_schedule(edges_probs: list[tuple[str, int, str, int, float]]) -> list[
+    tuple[str, int, str, int]]:
     rows = list(dict.fromkeys((fr_t, fr_id) for fr_t, fr_id, _, _, _ in edges_probs))
     cols = list(dict.fromkeys((to_t, to_id) for _, _, to_t, to_id, _ in edges_probs))
     r_idx = {v: i for i, v in enumerate(rows)}
@@ -106,7 +110,8 @@ def hungarian_choose_to_schedule(edges_probs: list[tuple[str, int, str, int, flo
     return [(str(rows[i][0]), int(rows[i][1]), str(cols[j][0]), int(cols[j][1])) for i, j in zip(row_inds, col_inds)]
 
 
-def schedule_edges_round_slice(round_slice: tuple[Schedule, Schedule], edges_to_sch: list[tuple[str, int, str, int, float]]) -> None:
+def schedule_edges_round_slice(round_slice: tuple[Schedule, Schedule],
+                               edges_to_sch: list[tuple[str, int, str, int, float]]) -> None:
     _, gnn_id_to_pr_id = round_slice_to_node_ids_mapping(round_slice)
     for fr_t, fr_id, to_t, to_id, buf in edges_to_sch:
         if fr_t not in {'left_dummy', 'right_dummy'}:
@@ -165,17 +170,16 @@ def get_final_sch_from_r_slice(round_slice: tuple[Schedule, Schedule]) -> Schedu
         f_pos_st_t = get_f_pos_st_t(sched_w_id=sched_w_id, job_id=job_id)
         min_st_t = max(min_st_t, f_pos_st_t - delta)
 
-
     ########################
 
     f_sch = copy.deepcopy(round_slice[0])
     n_workers = f_sch.get_problem().n_workers
     r_exec_orders = round_slice[1].get_execution_orders()
 
-    max_ids = [len(order)-1 for order in r_exec_orders]
+    max_ids = [len(order) - 1 for order in r_exec_orders]
     max_id = max(max_ids)
-    ids = [len(order)-1 for order in r_exec_orders]
-    for it in range(max_id+1):
+    ids = [len(order) - 1 for order in r_exec_orders]
+    for it in range(max_id + 1):
         for w_id in range(n_workers):
             if ids[w_id] < 0:
                 continue
@@ -184,7 +188,7 @@ def get_final_sch_from_r_slice(round_slice: tuple[Schedule, Schedule]) -> Schedu
                 buf = 0
                 if ids[w_id] < max_ids[w_id]:  # We are inside the right schedule
                     # Calculate the buffer time
-                    previous_j = r_exec_orders[w_id][ids[w_id]+1]
+                    previous_j = r_exec_orders[w_id][ids[w_id] + 1]
                     prev_st_t = round_slice[1].get_scheduled_start_time(previous_j)
                     end_t = round_slice[1].get_scheduled_end_time(next_j)
                     buf = prev_st_t - end_t
@@ -211,7 +215,7 @@ def solve_problem_with_hetero_nn(model, problem: Problem, map_location: str = 'c
     round_slice[0].schedule_job(worker_id=0, job_id=0)
     if n_jobs == 1:
         return round_slice[0]
-    round_slice[1].schedule_job(worker_id=n_workers-1, job_id=n_jobs-1)
+    round_slice[1].schedule_job(worker_id=n_workers - 1, job_id=n_jobs - 1)
 
     all_jobs = set(range(problem.n_jobs))
     while round_slice[0].get_scheduled() | round_slice[1].get_scheduled() < all_jobs:
@@ -230,9 +234,9 @@ def solve_problem_with_hetero_nn(model, problem: Problem, map_location: str = 'c
 
 
 def get_problem_data_example():
-    # df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
-    df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
-    include = {'distribution': ['uniform'], 'name': ['BBr'], 'jobs_num': [402]}
+    df = make_df_from_all_csv_files('../data/occidata/outputs_from400')
+    # df = make_df_from_all_csv_files('../data/occidata/outputs_200_400')
+    include = {'distribution': ['uniform'], 'name': ['BBr'], 'jobs_num': [122]}
     df_filtered = filter_dataframe(df, include=include, exclude={}).drop_duplicates(subset=['name', 'jobs_f'])
     graph_f, jobs_f, n_workers, sch_str = df_filtered.iloc[1][["graph_f", "jobs_f", "workers_num", "schedule"]]
 
@@ -281,6 +285,7 @@ def load_best_model(train_loader, map_location):
 
     return best_model
 
+
 def one_problem_try():
     problem, data = get_problem_data_example()
     map_location = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -293,29 +298,42 @@ def one_problem_try():
 
     best_model = load_best_model(train_loader=train_loader, map_location=map_location)
 
-    ###############################
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    src_configs = {
-        # 'left_dummy': ['left_right_candidate', 'left_candidate'],
-        # 'right_dummy': ['left_right_candidate', 'right_candidate'],
-        'left_dummy': ['not_scheduled'],
-        'right_dummy': ['not_scheduled'],
-    }
-    acc, f1, r2 = evaluate(
-        best_model,
-        test_loader,
-        device,
-        src_configs,
-        threshold=0.,
-        split_name="Test",
-    )
-    print("Test acc:", acc, "f1:", f1, "r2:", r2)
+    #### EVALUATE LOADED MODEL:
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # src_configs = {
+    #     # 'left_dummy': ['left_right_candidate', 'left_candidate'],
+    #     # 'right_dummy': ['left_right_candidate', 'right_candidate'],
+    #     'left_dummy': ['not_scheduled'],
+    #     'right_dummy': ['not_scheduled'],
+    # }
+    # acc, f1, r2 = evaluate(
+    #     best_model,
+    #     test_loader,
+    #     device,
+    #     src_configs,
+    #     threshold=0.,
+    #     split_name="Test",
+    # )
+    # print("Test acc:", acc, "f1:", f1, "r2:", r2)
     #############################
-
 
     sch = solve_problem_with_hetero_nn(best_model, problem, map_location=map_location, mode='greedy')
     print("greedy", get_metrics(sch))
     draw_schedule(sch)
+
+    # POSTPROCESSING:
+    sch, gap = cp_multi_mode_buf_postprocessing(problem,
+                                                num_of_buf_modes=1 + 1,  # including buf=0
+                                                sum_of_buf=4 * problem.n_workers,
+                                                st_times={i: sch.get_scheduled_start_time(i) for i in range(sch.get_problem().n_jobs)},
+                                                makespan_bound=sch.get_makespan(),
+                                                scenarios_num=30,
+                                                obj="avg_exp_ovp",
+                                                time_limit=60,
+                                                log_output=True)
+    print("postprocessed", get_metrics(sch))
+    draw_schedule(sch)
+
     # sch = solve_problem_with_hetero_nn(best_model, problem, map_location=map_location, mode='hungarian')
     # print("hungarian", get_metrics(sch))
     # draw_schedule(sch)
@@ -398,7 +416,8 @@ def main():
     # draw_box_plots(name_to_metrics, 'max_obj', labelsize=20, fontsize=11)
 
 
-def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str, labelsize: int=20, fontsize: int=20, ):
+def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str, labelsize: int = 20,
+                   fontsize: int = 20, ):
     # model_name -> metric name -> [metric values]
     names = list(name_to_metric.keys())
     print('names', names)
@@ -409,12 +428,13 @@ def draw_box_plots(name_to_metric: dict[str, dict[str, list]], metric_name: str,
                                     for i in range(instances_num)]
     print('len min metric', len(min_metric_for_each_instance))
 
-    delta_with_min = [[name_to_metric[model_name][metric_name][i] - min_metric_for_each_instance[i] for i in range(instances_num)]
-                      for model_name in names]
+    delta_with_min = [
+        [name_to_metric[model_name][metric_name][i] - min_metric_for_each_instance[i] for i in range(instances_num)]
+        for model_name in names]
     fig, ax = plt.subplots()
     # ax.set_ylabel(f'{metric_name} (Δ with min.)', fontsize=fontsize//2)
     ax.tick_params(axis='both', which='major', labelsize=labelsize)
-    ax.boxplot(delta_with_min,  tick_labels=names)
+    ax.boxplot(delta_with_min, tick_labels=names)
     ax.set_title(f'{metric_name} (Δ with min.)', fontsize=fontsize)
 
     plt.show()

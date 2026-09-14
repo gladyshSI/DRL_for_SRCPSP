@@ -3,6 +3,8 @@ import os
 import time
 import random
 
+import numpy as np
+
 from cp_models.cp_simple import cplex_simple
 from cp_models.cp_stochastic_bounded_buffer_num import cplex_stochastic_multi_mode_buf
 from lib.problem import Problem
@@ -57,14 +59,14 @@ def rand_sgs_best_of_k(problem: Problem, k: int) -> Schedule:
 
     while len(candidates) > 0:
         n_to_sch = min(n_workers, len(candidates))
-        best_j_var, best_w_var, best_obj = [], [], float('inf')
+        best_j_var, best_w_var, best_obj = [], [], (float('inf'), float('inf'))
         for i in range(k):
             sch_to_try = copy.deepcopy(sch)
             j_to_sch = random.sample(candidates, n_to_sch)
             w_to_sch = random.sample(workers, n_to_sch)
             for w_id, j_id in zip(w_to_sch, j_to_sch):
                 sch_to_try.schedule_job(worker_id=w_id, job_id=j_id)
-            obj = (sch_to_try.get_makespan() +
+            obj = (sch_to_try.get_makespan(),
                    sum([x.e() for _, x in sch_to_try.calculate_exact_overlap_distributions().items()]))
             if obj < best_obj:
                 best_obj = obj
@@ -73,6 +75,46 @@ def rand_sgs_best_of_k(problem: Problem, k: int) -> Schedule:
         for w_id, j_id in zip(best_w_var, best_j_var):
             sch.schedule_job(worker_id=w_id, job_id=j_id)
         candidates = sch.get_candidates()
+    return sch
+
+
+import heapq
+
+
+def priority_rule(problem: Problem, job_to_priority: callable(int)) -> Schedule:
+    n_workers = problem.n_workers
+    n_jobs = problem.n_jobs
+    sch = Schedule(problem)
+    scheduled = sch.get_scheduled()
+    not_scheduled = set(range(n_jobs))
+
+    endings = np.zeros(n_workers)
+    end_times = np.full(n_jobs, -1)
+    predecessors = [problem.graph.get_predecessors(j_id) for j_id in range(problem.n_jobs)]
+
+    while not_scheduled:
+        t = np.min(endings)
+        finished_by_t = set(np.where((end_times > -1) & (end_times <= t))[0])
+        t_candidate_ids = [i for i in not_scheduled if predecessors[i] <= finished_by_t]
+        w_ready_ids = np.where(endings <= t)[0]
+
+        if not t_candidate_ids:
+            # No job ready at t: fast-forward idle workers to the next completion event
+            busy = endings[endings > t]
+            if busy.size == 0:
+                raise RuntimeError("Deadlock: jobs remain but none are ready and no worker is busy")
+            endings[endings <= t] = busy.min()
+            continue
+
+        to_sch_num = min(len(w_ready_ids), len(t_candidate_ids))
+        to_sch = heapq.nsmallest(to_sch_num, t_candidate_ids, key=job_to_priority)
+
+        for w_id, j_id in zip(w_ready_ids, to_sch):
+            sch.schedule_job(w_id, j_id)
+            scheduled.add(j_id)
+            not_scheduled.remove(j_id)
+            endings[w_id] += problem.jobs[j_id].get_duration()
+            end_times[j_id] = sch.get_scheduled_end_time(j_id)
     return sch
 
 
@@ -91,7 +133,7 @@ def run_cp_stochastic_multi_mode_buf(problem: Problem, time_limit: int, paramete
     obj = parameters['obj']
     start_time = time.time()
     sch, gap = cplex_stochastic_multi_mode_buf(problem,
-                                               num_of_buf_modes=max_b+1,  # including buf=0
+                                               num_of_buf_modes=max_b + 1,  # including buf=0
                                                sum_of_buf=sum_of_buf,
                                                scenarios_num=scenarios_num,
                                                obj=obj,
@@ -100,6 +142,7 @@ def run_cp_stochastic_multi_mode_buf(problem: Problem, time_limit: int, paramete
     end_time = time.time()
 
     return sch, gap, (end_time - start_time)
+
 
 def main():
     problems_dir = '../data/problems/'
@@ -143,8 +186,3 @@ if __name__ == '__main__':
     #                                                  'N': 30, 'max_b': 1, 'obj': 'avg_rm'})
     # path_to_save = os.path.join(solutions_dir, 'BBr_' + problem_name)
     # sch.save_to_file(path_to_save)
-
-
-
-
-

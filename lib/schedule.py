@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 from collections import defaultdict, deque
 from itertools import repeat, starmap
 
@@ -344,8 +345,18 @@ class Schedule:
         return sch
 
     def save_to_file(self, path_to_file: str):
+        class NumpyEncoder(json.JSONEncoder):
+            def default(self, o):
+                if isinstance(o, np.integer):
+                    return int(o)
+                if isinstance(o, np.floating):
+                    return float(o)
+                if isinstance(o, np.ndarray):
+                    return o.tolist()
+                return super().default(o)
+
         with open(path_to_file, "w") as f:
-            json.dump(self.to_dict(), f)
+            json.dump(self.to_dict(), f, cls=NumpyEncoder)
 
     @classmethod
     def read_from_file(cls, path_to_file: str):
@@ -427,6 +438,21 @@ def sch_top_sort_from_st_id(sch: Schedule, start_id: int, reverse: bool = False)
                 stack.append((next_v, False))
 
     return order[::-1]
+
+
+def get_max_possible_right_shift(schedule: Schedule, job_id: int) -> int:
+    lag = math.inf
+    st_t = schedule.get_scheduled_start_time(job_id)
+    dur = schedule.get_problem().jobs[job_id].get_duration()
+    w_id = schedule.get_scheduled_worker(job_id)
+    next_id = schedule.get_execution_orders()[w_id].index(job_id) + 1
+    if next_id < len(schedule.get_execution_orders()[w_id]):
+        next_job = schedule.get_execution_orders()[w_id][next_id]
+        lag = schedule.get_scheduled_start_time(next_job) - st_t - dur
+
+    for successor in schedule.get_problem().graph.get_successors(job_id):
+        lag = min(lag, schedule.get_scheduled_start_time(successor) - st_t - dur)
+    return lag
 
 
 def sensitivity_test(sch: Schedule, job_id: int, shift: float) -> list[float]:
